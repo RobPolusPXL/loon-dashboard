@@ -1,4 +1,5 @@
 import { kolommen, balken, GROEP_KLEUR, GROEP_VOLGORDE, KLEUR } from './charts.js';
+import { tegels, kaart, raster, terugKnop } from './ui.js';
 // Tabblad Werk: overzichten uit de time statements.
 
 const MND = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
@@ -181,7 +182,7 @@ export function werkScherm(state) {
   CORR = state.correcties || [];
   const alles = state.werk || [];
   if (!alles.length) {
-    return `<section class="leeg"><h1>Werk</h1><p>Nog geen time statements ingelezen.</p><a class="knop primair" href="#/gegevens">Time statements inlezen</a></section>`;
+    return `<section class="leeg"><h2>Nog geen time statements</h2><p>Lees je time statements uit bpost4me in om je werkdagen te zien.</p><a class="knop primair" href="#/gegevens">Time statements inlezen</a></section>`;
   }
   const jaren = [...new Set(alles.map((m) => +m.maand.slice(0, 4)))].sort();
   const jaar = jaren.includes(state.werkJaar) ? state.werkJaar : jaren[jaren.length - 1];
@@ -199,52 +200,44 @@ export function werkScherm(state) {
   const laatste = [...alles].filter((m) => m.verlof?.length).sort((a, b) => (a.situatie || '').localeCompare(b.situatie || '')).pop();
   const ontbreekt = MND.filter((_, i) => !maanden.some((m) => +m.maand.slice(5, 7) === i + 1) && (jaar < new Date().getFullYear() || i < new Date().getMonth()));
 
-  return `
-    <header class="kop"><h1>Werk</h1>
-      ${jaren.length > 1 ? `<div class="jaren" role="group" aria-label="Jaar">${jaren.map((j) => `<button type="button" data-werkjaar="${j}" class="${j === jaar ? 'aan' : ''}" aria-pressed="${j === jaar}">${j}</button>`).join('')}</div>` : `<p class="sub">${jaar}</p>`}
-    </header>
-    <dl class="kern">
-      <div><dt>Gewerkte dagen</dt><dd>${som(c, 'dagen')}</dd></div>
-      <div><dt>Gepresteerde uren</dt><dd>${uren(som(c, 'uren'))}</dd></div>
-      <div><dt>Meerprestaties</dt><dd>${uren(som(c, 'meer'))} <small>${som(c, 'meerDagen')} d</small></dd></div>
-      <div><dt>Nachttoelage</dt><dd>${som(c, 'nacht')} <small>dagen</small></dd></div>
-      <div><dt>6de dag</dt><dd>${som(c, 'zesde')} <small>dagen</small></dd></div>
-      <div><dt>Afwezig</dt><dd>${som(c, 'afwezig')} <small>dagen</small></dd></div>
-    </dl>
-    ${kalender(maanden, codes, jaar)}
-    ${ontbreekt.length ? `<p class="noot">Geen time statement voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''}
-    <h2>Dagen per maand</h2>
-    ${kolommen(MND, [
+  const kalenderKaart = kaart(`Kalender ${jaar}`, kalender(maanden, codes, jaar) + (ontbreekt.length ? `<p class="noot">Geen time statement voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''), { breed: true, sub: 'tik op een maand voor de details' });
+  const dagenKaart = kaart('Dagen per maand', kolommen(MND, [
       { naam: 'Gewerkt', kleur: KLEUR.werk, waarden: perMaand.map((x) => (x ? x.dagen : null)) },
       ...groepenJaar.map((g) => ({ naam: g.naam, kleur: GROEP_KLEUR[g.k], waarden: perMaand.map((x) => (x ? x.g[g.k] ?? 0 : null)) })),
-    ], { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}`, asFmt: (v) => String(v), hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) })}
-    <h2>Uren per maand</h2>
-    ${kolommen(MND, [
+    ], { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}`, asFmt: (v) => String(v), hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) }));
+  const urenKaart = kaart('Uren per maand', kolommen(MND, [
       { naam: 'Gewone uren', kleur: KLEUR.werk, waarden: perMaand.map((x) => (x ? (x.uren - x.meer) / 60 : null)) },
       { naam: 'Meerprestaties', kleur: KLEUR.meer, waarden: perMaand.map((x) => (x ? x.meer / 60 : null)) },
-    ], { fmt: (v) => uren(Math.round(v * 60)), asFmt: (v) => `${v} u`, hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) })}
-    ${(() => { const pg = perGroep(maanden, codes); return pg.length ? `<h2>Afwezigheden in ${jaar}</h2>
-      <table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip" style="background:${GROEP_KLEUR[g.k]}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
-        ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(code === '—' ? 'Wettelijke feestdag (zonder code op de time statement)' : code.endsWith('*') ? `${codes[code.slice(0, -1)] ?? code.slice(0, -1)}, zelf aangepast` : codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>` : ''; })()}
-    ${jaren.length > 1 ? `<h2>Afwezigheden per jaar</h2>
-      ${balken(jaren.map((j) => ({ label: String(j), waarden: groepDagenJaar(alles.filter((m) => +m.maand.slice(0, 4) === j), codes) })),
-        groepenAlle.map((g) => ({ k: g.k, naam: g.naam, kleur: GROEP_KLEUR[g.k] })), { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}` })}` : ''}
-    <h2>Gewerkt per weekdag</h2>
-    ${perWeekdag(maanden)}
-    <h2>Per maand</h2>
-    <div class="scroll"><table class="tabel">
+    ], { fmt: (v) => uren(Math.round(v * 60)), asFmt: (v) => `${v} u`, hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) }));
+  const pg = perGroep(maanden, codes);
+  const afwKaart = pg.length ? kaart(`Afwezigheden in ${jaar}`, `<table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip" style="background:${GROEP_KLEUR[g.k]}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
+        ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(code === '—' ? 'Wettelijke feestdag (zonder code op de time statement)' : code.endsWith('*') ? `${codes[code.slice(0, -1)] ?? code.slice(0, -1)}, zelf aangepast` : codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>`) : '';
+  const jarenKaart = jaren.length > 1 ? kaart('Afwezigheden per jaar', balken(jaren.map((j) => ({ label: String(j), waarden: groepDagenJaar(alles.filter((m) => +m.maand.slice(0, 4) === j), codes) })),
+        groepenAlle.map((g) => ({ k: g.k, naam: g.naam, kleur: GROEP_KLEUR[g.k] })), { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}` }), { breed: true }) : '';
+  const tabelKaart = kaart('Per maand', `<div class="scroll"><table class="tabel">
       <thead><tr><th>Maand</th><th>Gewerkt</th><th>Uren</th><th>Meer</th><th>Nacht</th><th>6de dag</th><th>Afwezig</th></tr></thead>
       <tbody>${c.map((x) => `<tr data-href="#/werk/${x.ym}"><th><a href="#/werk/${x.ym}">${maandKort(x.ym)}</a></th><td>${x.dagen}</td><td>${uren(x.uren)}</td>
         <td>${x.meer ? uren(x.meer) : ''}</td><td>${x.nacht || ''}</td><td>${x.zesde || ''}</td>
         <td class="chips">${groepenJaar.filter((g) => x.g[g.k]).map((g) => `<span title="${g.naam}"><i style="background:${GROEP_KLEUR[g.k]}"></i>${x.g[g.k]}</span>`).join('')}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th>Totaal</th><td>${som(c, 'dagen')}</td><td>${uren(som(c, 'uren'))}</td><td>${uren(som(c, 'meer'))}</td><td>${som(c, 'nacht')}</td><td>${som(c, 'zesde')}</td>
         <td class="chips">${groepenJaar.map((g) => `<span title="${g.naam}"><i style="background:${GROEP_KLEUR[g.k]}"></i>${c.reduce((a, x) => a + (x.g[g.k] ?? 0), 0)}</span>`).join('')}</td></tr></tfoot>
-    </table></div>
-    <p class="noot">Afwezig: hele dagen per groep. ARAB en toelage uitblijven ongevallen staan per dag in de maanddetails.</p>
-    ${laatste?.verlof?.length ? `<h2>Verlof op ${datumBE(laatste.situatie)}</h2>
-      <div class="scroll"><table class="tabel"><thead><tr><th>Soort</th><th>Recht op</th><th>Opgenomen</th><th>Aangevraagd</th><th>Saldo</th></tr></thead>
-      <tbody>${laatste.verlof.map((v) => { const f = v.eenheid === 'uren' ? uren : n; return `<tr><th>${esc(v.naam)} <small>(${v.eenheid})</small></th><td>${f(v.recht)}</td><td>${f(v.opgenomen)}</td><td>${f(v.aangevraagd)}</td><td><b>${f(v.saldo)}</b></td></tr>`; }).join('')}
-      ${(laatste.rust || []).map((r) => `<tr><th>${esc(r.naam)} <small>(tot ${datumBE(r.einddatum)})</small></th><td></td><td></td><td></td><td><b>${r.eenheid === 'uren' ? uren(r.hoeveelheid) : n(r.hoeveelheid)}</b></td></tr>`).join('')}</tbody></table></div>` : ''}`;
+    </table></div>`, { breed: true });
+  const verlofKaart = laatste?.verlof?.length ? kaart('Verlof', `<div class="verlof-saldo">${laatste.verlof.filter((v) => v.saldo != null).map((v) => {
+      const f = v.eenheid === 'uren' ? uren : n;
+      return `<div><span>${esc(v.naam)}</span><b>${f(v.saldo)}</b><small>${v.recht != null ? `van ${f(v.recht)} ${v.eenheid}` : v.eenheid}${v.aangevraagd ? ` · ${f(v.aangevraagd)} aangevraagd` : ''}</small></div>`;
+    }).join('')}${(laatste.rust || []).map((r) => `<div><span>${esc(r.naam)}</span><b>${r.eenheid === 'uren' ? uren(r.hoeveelheid) : n(r.hoeveelheid)}</b><small>tot ${datumBE(r.einddatum)}</small></div>`).join('')}</div>`, { sub: `saldo op ${datumBE(laatste.situatie)}` }) : '';
+  const afwTot = groepenJaar.reduce((a, g) => a + c.reduce((b, x) => b + (x.g[g.k] ?? 0), 0), 0);
+
+  return `
+    <header class="kop"><p class="sub">${maanden.length} ${maanden.length === 1 ? 'maand' : 'maanden'} ingelezen</p><h1>Werk ${jaar}</h1></header>
+    ${jaren.length > 1 ? `<div class="jaren" role="group" aria-label="Jaar">${jaren.map((j) => `<button type="button" data-werkjaar="${j}" class="${j === jaar ? 'aan' : ''}" aria-pressed="${j === jaar}">${j}</button>`).join('')}</div>` : ''}
+    ${tegels([
+      { label: 'Gewerkte dagen', waarde: String(som(c, 'dagen')), detail: `${uren(som(c, 'uren'))} uur gepresteerd`, kleur: KLEUR.werk, hoofd: true },
+      { label: 'Meerprestaties', waarde: uren(som(c, 'meer')), detail: `op ${som(c, 'meerDagen')} ${som(c, 'meerDagen') === 1 ? 'dag' : 'dagen'}`, kleur: KLEUR.meer },
+      { label: 'Afwezig', waarde: `${afwTot}<small>dagen</small>`, detail: groepenJaar.map((g) => `${c.reduce((b, x) => b + (x.g[g.k] ?? 0), 0)} ${g.naam.toLowerCase()}`).slice(0, 2).join(' · ') },
+      { label: 'Toelages', waarde: `${som(c, 'nacht')}<small>nacht</small>`, detail: `${som(c, 'zesde')} keer 6de dag` },
+    ])}
+    ${raster(kalenderKaart, dagenKaart, urenKaart, afwKaart, `<div class="stapel">${verlofKaart}${kaart('Gewerkt per weekdag', perWeekdag(maanden))}</div>`, jarenKaart, tabelKaart)}`;
 }
 
 export function werkMaandScherm(state, ym) {
@@ -254,30 +247,29 @@ export function werkMaandScherm(state, ym) {
   const c = maandCijfers(m);
   const cel = (v) => (v == null ? '' : esc(v));
   return `
-    <header class="kop rij"><a class="terug" href="#/werk" data-werkjaar="${ym.slice(0, 4)}" aria-label="Terug">←</a><h1>${maandVol(ym)}</h1></header>
-    <dl class="kern">
-      <div><dt>Gewerkte dagen</dt><dd>${c.dagen}</dd></div>
-      <div><dt>Gepresteerde uren</dt><dd>${uren(c.uren)}</dd></div>
-      <div><dt>Meerprestaties</dt><dd>${uren(c.meer)}</dd></div>
-      <div><dt>Maaltijdcheques</dt><dd>${n(c.cheques)}</dd></div>
-    </dl>
-    ${m.controles?.length ? `<p class="let-op">Bij het inlezen klopten deze totalen niet: ${m.controles.map(esc).join('; ')}.</p>` : ''}
-    <div class="scroll"><table class="tabel dagen">
+    <header class="kop rij">${terugKnop('#/werk', ` data-werkjaar="${ym.slice(0, 4)}"`)}<div><p class="sub">Time statement · situatie ${datumBE(m.situatie)}</p><h1>${maandVol(ym)}</h1></div></header>
+    ${tegels([
+      { label: 'Gewerkte dagen', waarde: String(c.dagen), kleur: KLEUR.werk, hoofd: true, detail: `${uren(c.uren)} uur` },
+      { label: 'Meerprestaties', waarde: uren(c.meer), kleur: KLEUR.meer },
+      { label: 'Afwezig', waarde: `${c.afwezig}<small>dagen</small>` },
+      { label: 'Maaltijdcheques', waarde: n(c.cheques) },
+    ])}
+    ${m.controles?.length ? kaart('Totalen kloppen niet', `<p class="let-op-tekst">${m.controles.map(esc).join('; ')}.</p>`, { extra: 'let-op' }) : ''}
+    ${raster(kaart('Dag per dag', `<div class="scroll"><table class="tabel dagen">
       <thead><tr><th>Dag</th><th>Gepland</th><th>Gepresteerd</th><th>Meer</th><th>ARAB</th><th>Uitbl.</th><th>Nacht</th><th>6de dag</th><th>Afwezig</th></tr></thead>
       <tbody>${m.dagen.map((d) => `<tr class="${gewerkt(d) ? '' : 'vrij'}${d.wd >= 5 ? ' weekend' : ''}"><th>${WD[d.wd]} ${+d.d.slice(8, 10)}</th>
         <td>${typeof d.gepland === 'number' ? uren(d.gepland) : cel(d.gepland)}</td><td>${typeof d.gepresteerd === 'number' ? uren(d.gepresteerd) : cel(d.gepresteerd)}</td>
         <td>${typeof d.meer === 'number' ? uren(d.meer) : cel(d.meer)}</td><td>${cel(d.arab)}</td><td>${cel(d.uitblijven)}</td><td>${cel(d.nacht)}</td><td>${cel(d.zesde)}</td><td>${d.afwezig ? esc(afwTekst(d, m.codes || {})) + (correctieVan(d) ? ` <small>→ ${GROEPEN.find((g) => g.k === correctieVan(d).groep)?.naam}, zelf aangepast</small>` : '') : wettelijkeFeestdag(d) ? esc(`${wettelijkeFeestdag(d)} (wettelijke feestdag)`) : ''}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th>Totaal</th><td>${uren(m.totalen.gepland)}</td><td>${uren(m.totalen.gepresteerd)}</td><td>${uren(m.totalen.meer)}</td><td colspan="5"></td></tr></tfoot>
-    </table></div>
-    <h2>Afwezigheid anders indelen</h2>
-    <p class="uitleg">Klopt de code op de time statement niet meer (bijvoorbeeld ziekte die later als arbeidsongeval erkend werd)? Duid de periode aan; de afwezige dagen daarin tellen dan in de gekozen groep.</p>
+    </table></div>`, { breed: true }),
+    kaart('Afwezigheid anders indelen', `<p class="uitleg">Klopt de code op de time statement niet meer (bijvoorbeeld ziekte die later als arbeidsongeval erkend werd)? Duid de periode aan; de afwezige dagen daarin tellen dan in de gekozen groep.</p>
     <form id="correctie" class="correctie">
       <label>Van <input type="date" name="van" required min="${ym}-01" max="${ym}-${String(m.dagen.length).padStart(2, '0')}"></label>
       <label>Tot en met <input type="date" name="tot" required></label>
       <label>Groep <select name="groep">${GROEPEN.map((g) => `<option value="${g.k}">${g.naam}</option>`).join('')}</select></label>
       <button type="submit" class="knop">Toepassen</button>
     </form>
-    ${CORR.length ? `<ul class="import">${[...CORR].sort((a, b) => a.van.localeCompare(b.van)).map((c) => `<li><span>${datumBE(c.van)} – ${datumBE(c.tot)}</span><span>${GROEPEN.find((g) => g.k === c.groep)?.naam}</span><button type="button" class="link" data-wiscorr="${c.van}|${c.tot}">verwijderen</button></li>`).join('')}</ul>` : ''}
+    ${CORR.length ? `<ul class="import">${[...CORR].sort((a, b) => a.van.localeCompare(b.van)).map((c) => `<li><span>${datumBE(c.van)} – ${datumBE(c.tot)}</span><span>${GROEPEN.find((g) => g.k === c.groep)?.naam}</span><button type="button" class="link" data-wiscorr="${c.van}|${c.tot}">verwijderen</button></li>`).join('')}</ul>` : ''}`, { breed: true }))}
     <p class="acties">${state.wisWerk === ym
       ? `Time statement van ${maandVol(ym)} verwijderen? <button type="button" class="link gevaar" data-wiswerk-ja="${ym}">Ja, verwijderen</button> <button type="button" class="link" data-wis-nee>Annuleren</button>`
       : `<button type="button" class="link" data-wiswerk="${ym}">Time statement verwijderen</button>`}</p>`;

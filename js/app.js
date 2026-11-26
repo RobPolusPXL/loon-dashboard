@@ -3,6 +3,7 @@ import { leesItems, parseLoonfiche } from './loonfiche.js';
 import { isTimestatement, parseTimestatement } from './timestatement.js';
 import { werkScherm, werkMaandScherm } from './werk.js';
 import { kolommen, lijn as lijnGrafiek, balken, verdeelbalk, KLEUR } from './charts.js';
+import { tegels, kaart, raster, terugKnop } from './ui.js';
 
 const MND = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 const MAAND_VOL = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
@@ -35,6 +36,9 @@ const $view = document.getElementById('view');
 const state = { user: null, gestart: false, fiches: null, werk: [], fout: null, imports: [], bezig: false, melding: null, jaar: null, wis: null };
 
 // ---------- Jaar ----------
+const jaarChips = (jaren, jaar, attr = 'data-jaar') => (jaren.length > 1
+  ? `<div class="jaren" role="group" aria-label="Jaar">${jaren.map((j) => `<button type="button" ${attr}="${j}" class="${j === jaar ? 'aan' : ''}" aria-pressed="${j === jaar}">${j}</button>`).join('')}</div>` : '');
+
 function jarenVan(fiches) { return [...new Set(fiches.map((f) => +f.maand.slice(0, 4)))].sort(); }
 
 // Afgeleide bedragen per fiche
@@ -74,32 +78,32 @@ function jaarScherm() {
     { naam: 'Inhoudingen', v: -(som(lijst, (f) => f.totalen.inhoudingen) ?? 0), kleur: KLEUR.inh },
   ], { fmt: eur0 });
 
-  return `
-    <header class="kop">
-      <h1>Loon</h1>
-      ${jaren.length > 1 ? `<div class="jaren" role="group" aria-label="Jaar">${jaren.map((j) => `<button type="button" data-jaar="${j}" class="${j === jaar ? 'aan' : ''}" aria-pressed="${j === jaar}">${j}</button>`).join('')}</div>` : `<p class="sub">${jaar}</p>`}
-    </header>
-    <div class="held"><span>Uitbetaald in ${jaar}</span><b>${eur0(uit)}</b><small>${nMaanden} ${nMaanden === 1 ? 'maand' : 'maanden'} · gemiddeld ${eur0(uit / nMaanden)} per maand</small></div>
-    <dl class="kern">
-      <div><dt>Bruto</dt><dd>${eur0(som(lijst, brutoTot))}</dd></div>
-      <div><dt>Ingehouden</dt><dd>${eur0(som(lijst, ingehouden))}</dd></div>
-      <div><dt>Vergoedingen</dt><dd>${eur0(som(lijst, verg))}</dd></div>
-      <div><dt>Gewerkte dagen</dt><dd>${getal(somDagen(lijst))}</dd></div>
-      <div><dt>Maaltijdcheques</dt><dd>${getal(som(lijst, (f) => f.maaltijdcheques))}</dd></div>
-    </dl>
-    <h2>Uitbetaald per maand</h2>
-    ${grafiek}
-    ${ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''}
-    <h2>Waar gaat je bruto naartoe</h2>
-    ${verdeel}
-    <h2>Per maand</h2>
-    <div class="scroll"><table class="tabel">
+  const tabel = `<div class="scroll"><table class="tabel">
       <thead><tr><th>Maand</th><th>Bruto</th><th>Ingehouden</th><th>Vergoedingen</th><th>Uitbetaald</th><th>Dagen</th></tr></thead>
       <tbody>${lijst.map((f) => `<tr data-href="#/fiche/${esc(f.id)}">
         <th><a href="#/fiche/${esc(f.id)}">${maandKort(f.maand)}</a>${f.controles?.length ? ' <span class="slecht" title="Totalen kloppen niet">•</span>' : ''}</th>
         <td>${eur0(brutoTot(f))}</td><td>${eur0(ingehouden(f))}</td><td>${verg(f) ? eur0(verg(f)) : ''}</td>
         <td><b>${eur(uitbetaald(f))}</b>${regul(f) ? `<small>incl. ${eur0(regul(f))} regularisatie</small>` : ''}</td><td>${getal(gewerkteDagen(f))}</td></tr>`).join('')}</tbody>
     </table></div>`;
+  const nettoPct = som(lijst, brutoTot) ? Math.round((som(lijst, nettoLoon) / som(lijst, brutoTot)) * 100) : null;
+  return `
+    <header class="kop"><p class="sub">${nMaanden} ${nMaanden === 1 ? 'maand' : 'maanden'} ingelezen</p><h1>Loon ${jaar}</h1></header>
+    ${jaarChips(jaren, jaar)}
+    ${tegels([
+      { label: 'Uitbetaald', waarde: eur0(uit), detail: `gemiddeld ${eur0(uit / nMaanden)} per maand`, kleur: KLEUR.netto, hoofd: true },
+      { label: 'Bruto', waarde: eur0(som(lijst, brutoTot)), detail: nettoPct != null ? `${nettoPct}% blijft netto over` : '' },
+      { label: 'Ingehouden', waarde: eur0(som(lijst, ingehouden)), detail: 'RSZ, voorheffing en inhoudingen', kleur: KLEUR.rsz },
+      { label: 'Gewerkt', waarde: `${getal(somDagen(lijst))}<small>dagen</small>`, detail: `${getal(som(lijst, (f) => f.maaltijdcheques))} maaltijdcheques`, href: '#/werk' },
+    ])}
+    ${raster(
+      kaart('Uitbetaald per maand', grafiek + (ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''), { breed: true, sub: 'klik op een maand voor de fiche' }),
+      kaart('Waar gaat je bruto naartoe', `<div class="groot">${eur0(som(lijst, brutoTot))}<small>bruto</small></div>${verdeel}`),
+      kaart('Vergoedingen', `<div class="groot">${eur0(som(lijst, verg))}</div>
+        <table class="lijst">${Object.entries(lijst.flatMap((f) => (f.secties.find((x) => x.sleutel === 'vergoedingen')?.lijnen || [])).reduce((a, l) => { a[l.omschrijving] = (a[l.omschrijving] ?? 0) + l.bedrag; return a; }, {}))
+          .sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${eur0(v)}</td></tr>`).join('')}
+          ${som(lijst, regul) ? `<tr><th>Regularisaties</th><td>${eur0(som(lijst, regul))}</td></tr>` : ''}</table>`),
+      kaart('Per maand', tabel, { breed: true }),
+    )}`;
 }
 
 // ---------- Alle jaren ----------
@@ -144,27 +148,33 @@ function jarenScherm() {
   const enkelL = (lfn, kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => lfn(l)) }], { fmt: kort, hoogte: 120, tipExtra, topLabel: perJaar.map(({ l }) => { const v = lfn(l); return v == null ? null : kort(v); }) });
   const enkel = (fn, kort, fmt = kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => som(l, fn)) }], { fmt, asFmt: kort, hoogte: 120, tipExtra, topLabel: perJaar.map(({ l }) => { const v = som(l, fn); return v == null ? null : kort(v); }) });
 
+  const totaal = som(fiches, uitbetaald);
+  const volle = perJaar.filter(({ l }) => n(l) === 12);
+  const besteJaar = [...perJaar].sort((a, b) => som(b.l, uitbetaald) - som(a.l, uitbetaald))[0];
+  const laatsteIndex = [...fiches].sort((a, b) => b.maand.localeCompare(a.maand)).find((f) => f.gegevens?.index != null);
+  const eersteIndex = [...fiches].sort((a, b) => a.maand.localeCompare(b.maand)).find((f) => f.gegevens?.index != null);
   return `
-    <header class="kop"><h1>Per jaar</h1></header>
-    <h2>Uitbetaald per jaar</h2>
-    ${uitPerJaar}
-    <h2>Netto loon per maand</h2>
-    <p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt om die fiche te openen.</p>
-    ${nettoLijn}
-    <h2>Van bruto naar netto</h2>
-    ${pct}
-    <div class="duo">
-      <section><h2>Gewerkte dagen</h2>${enkelL(somDagen, (v) => f0(v))}</section>
-      <section><h2>Maaltijdcheques</h2>${enkel((f) => f.maaltijdcheques, (v) => f0(v))}</section>
-      <section><h2>Fietsvergoeding</h2>${enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)}</section>
-      <section><h2>Index</h2>${indexLijn}</section>
-    </div>
-    <h2>Overzicht</h2>
-    <div class="scroll"><table class="tabel">
-      <thead><tr><th>Jaar</th><th>Maanden</th><th>Bruto</th><th>Ingehouden</th><th>Uitbetaald</th><th>Dagen</th></tr></thead>
-      <tbody>${perJaar.map(({ j, l }) => `<tr data-href="#/jaar/${j}"><th>${j}</th><td>${n(l)}</td><td>${eur0(som(l, brutoTot))}</td><td>${eur0(som(l, ingehouden))}</td>
-        <td><b>${eur0(som(l, uitbetaald))}</b></td><td>${getal(somDagen(l))}</td></tr>`).join('')}</tbody>
-    </table></div>`;
+    <header class="kop"><p class="sub">${jaren[0]} – ${jaren[jaren.length - 1]} · ${fiches.length} fiches</p><h1>Per jaar</h1></header>
+    ${tegels([
+      { label: 'Uitbetaald in totaal', waarde: eurK(totaal), detail: `${jaren.length} jaar`, kleur: KLEUR.netto, hoofd: true },
+      volle.length ? { label: 'Gemiddeld per vol jaar', waarde: eur0(som(volle.flatMap((x) => x.l), uitbetaald) / volle.length), detail: `${volle.length} volledige jaren` } : null,
+      besteJaar ? { label: 'Hoogste jaar', waarde: String(besteJaar.j), detail: eur0(som(besteJaar.l, uitbetaald)), href: `#/jaar/${besteJaar.j}` } : null,
+      laatsteIndex ? { label: 'Index', waarde: f2(laatsteIndex.gegevens.index), detail: eersteIndex && eersteIndex !== laatsteIndex ? `was ${f2(eersteIndex.gegevens.index)} in ${eersteIndex.maand.slice(0, 4)}` : '' } : null,
+    ])}
+    ${raster(
+      kaart('Uitbetaald per jaar', uitPerJaar, { breed: true, sub: 'klik op een jaar' }),
+      kaart('Netto loon per maand', nettoLijn + '<p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt voor die fiche.</p>', { breed: true }),
+      kaart('Van bruto naar netto', pct, { breed: true }),
+      kaart('Gewerkte dagen', enkelL(somDagen, (v) => f0(v))),
+      kaart('Maaltijdcheques', enkel((f) => f.maaltijdcheques, (v) => f0(v))),
+      kaart('Fietsvergoeding', enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)),
+      kaart('Index', indexLijn),
+      kaart('Overzicht', `<div class="scroll"><table class="tabel">
+        <thead><tr><th>Jaar</th><th>Maanden</th><th>Bruto</th><th>Ingehouden</th><th>Uitbetaald</th><th>Dagen</th></tr></thead>
+        <tbody>${perJaar.map(({ j, l }) => `<tr data-href="#/jaar/${j}"><th>${j}</th><td>${n(l)}</td><td>${eur0(som(l, brutoTot))}</td><td>${eur0(som(l, ingehouden))}</td>
+          <td><b>${eur0(som(l, uitbetaald))}</b></td><td>${getal(somDagen(l))}</td></tr>`).join('')}</tbody>
+      </table></div>`, { breed: true }),
+    )}`;
 }
 
 // ---------- Eén fiche ----------
@@ -183,23 +193,33 @@ function ficheScherm(id) {
   ].filter(([, v]) => v != null && v !== '');
   const prest = [...(f.prestaties?.dagen || []).map((p) => [p, 'dagen']), ...(f.prestaties?.uren || []).map((p) => [p, 'uren'])];
 
-  return `
-    <header class="kop rij"><a class="terug" href="#/" data-jaar="${f.maand.slice(0, 4)}" aria-label="Terug">←</a><h1>${maandVol(f.maand)}</h1></header>
-    <dl class="kern"><div><dt>Uitbetaald</dt><dd>${eur(uitbetaald(f))}</dd></div>
-      <div><dt>Gewerkt</dt><dd>${getal(gewerkteDagen(f))} <small>dagen</small></dd></div>
-      <div><dt>Maaltijdcheques</dt><dd>${getal(f.maaltijdcheques)}</dd></div></dl>
-    ${f.controles?.length ? `<p class="let-op">Bij het inlezen klopten deze totalen niet: ${f.controles.map(esc).join('; ')}. Vergelijk met de PDF.</p>` : ''}
-    <h2>Van bruto naar netto</h2>
-    <table class="lijst">${secties(f.secties)}
+  const brutoNaarNetto = `<table class="lijst">${secties(f.secties)}
       <tr class="totaal"><th>Nettoloon van de maand</th><td>${eur(f.totalen.netto)}</td></tr>
       ${f.totalen.regularisatie != null ? `<tr class="sectie"><th>Regularisatie</th><td>${eur(f.totalen.regularisatie)}</td></tr>` : ''}
       <tr class="totaal"><th>Totaal netto bedrag</th><td>${eur(f.totalen.totaal)}</td></tr>
-    </table>
-    ${f.herberekeningen?.length ? `<h2>Herberekeningen</h2>${f.herberekeningen.map((h) => `
-      <details><summary><span>${h.maand ? maandVol(h.maand) : 'Onbekende maand'}</span><b>${eur(h.totaal)}</b></summary>
-        <table class="lijst">${secties(h.secties)}</table></details>`).join('')}` : ''}
-    ${prest.length ? `<h2>Prestaties</h2><table class="lijst">${prest.map(([p, s]) => `<tr><th><span class="code">${esc(p.code)}</span>${esc(p.omschrijving)}</th><td>${esc(p.tekst)} ${s === 'uren' ? 'u' : ''}</td></tr>`).join('')}</table>` : ''}
-    ${gegevens.length ? `<h2>Loongegevens</h2><table class="lijst">${gegevens.map(([k, v]) => `<tr><th>${k}</th><td>${esc(v)}</td></tr>`).join('')}</table>` : ''}
+    </table>`;
+  return `
+    <header class="kop rij">${terugKnop(`#/jaar/${f.maand.slice(0, 4)}`)}<div><p class="sub">Loonfiche</p><h1>${maandVol(f.maand)}</h1></div></header>
+    ${tegels([
+      { label: 'Uitbetaald', waarde: eur(uitbetaald(f)), kleur: KLEUR.netto, hoofd: true, detail: regul(f) ? `incl. ${eur(regul(f))} regularisatie` : '' },
+      { label: 'Bruto', waarde: eur0(brutoTot(f)) },
+      { label: 'Ingehouden', waarde: eur0(ingehouden(f)), kleur: KLEUR.rsz },
+      { label: 'Gewerkt', waarde: `${getal(gewerkteDagen(f))}<small>dagen</small>`, detail: `${getal(f.maaltijdcheques)} maaltijdcheques` },
+    ])}
+    ${f.controles?.length ? kaart('Totalen kloppen niet', `<p class="let-op-tekst">${f.controles.map(esc).join('; ')}. Vergelijk met de PDF.</p>`, { extra: 'let-op' }) : ''}
+    ${raster(
+      kaart('Van bruto naar netto', `${verdeelbalk([
+        { naam: 'Netto loon', v: Math.max(0, nettoLoon(f)), kleur: KLEUR.netto }, { naam: 'RSZ', v: -(f.totalen.sociale ?? 0), kleur: KLEUR.rsz },
+        { naam: 'Voorheffing', v: -(f.totalen.voorheffing ?? 0), kleur: KLEUR.bv }, { naam: 'Inhoudingen', v: -(f.totalen.inhoudingen ?? 0), kleur: KLEUR.inh },
+      ], { fmt: eur })}${brutoNaarNetto}`),
+      `<div class="stapel">${[
+        f.herberekeningen?.length ? kaart('Herberekeningen', f.herberekeningen.map((h) => `
+          <details><summary><span>${h.maand ? maandVol(h.maand) : 'Onbekende maand'}</span><b>${eur(h.totaal)}</b></summary>
+            <table class="lijst">${secties(h.secties)}</table></details>`).join(''), { sub: `samen ${eur(regul(f))}` }) : '',
+        prest.length ? kaart('Prestaties', `<table class="lijst">${prest.map(([p, s]) => `<tr><th><span class="code">${esc(p.code)}</span>${esc(p.omschrijving)}</th><td>${esc(p.tekst)} ${s === 'uren' ? 'u' : ''}</td></tr>`).join('')}</table>`) : '',
+        gegevens.length ? kaart('Loongegevens', `<table class="lijst">${gegevens.map(([k, v]) => `<tr><th>${k}</th><td>${esc(v)}</td></tr>`).join('')}</table>`) : '',
+      ].join('')}</div>`,
+    )}
     <p class="acties">${state.wis === f.id
       ? `Fiche van ${maandVol(f.maand)} verwijderen? <button type="button" class="link gevaar" data-wis-ja="${esc(f.id)}">Ja, verwijderen</button> <button type="button" class="link" data-wis-nee>Annuleren</button>`
       : `<button type="button" class="link" data-wis="${esc(f.id)}">Fiche verwijderen</button>`}</p>`;
@@ -208,32 +228,37 @@ function ficheScherm(id) {
 // ---------- Gegevens ----------
 function gegevensScherm() {
   const ok = state.imports.filter((x) => x.fiche || (x.werk && !x.ouder));
-  return `
-    <header class="kop"><h1>Gegevens</h1><p class="sub">Aangemeld als ${esc(state.user.email || state.user.displayName)}</p></header>
-    <h2>PDF's inlezen</h2>
-    <p class="uitleg">Loonfiches en time statements uit bpost4me, door elkaar. Ze worden in je browser gelezen; de PDF zelf wordt niet opgeslagen.
-      Rijksregisternummer, IBAN, stamnummer en adres worden overgeslagen. Een bestand dat je opnieuw inleest, overschrijft de vorige versie.</p>
-    <label class="knop">PDF's kiezen<input id="bestanden" type="file" accept="application/pdf,.pdf" multiple hidden></label>
-    ${state.imports.length ? `<ul class="import">${state.imports.map((x) => x.fiche
+  const lijstImport = state.imports.length ? `<ul class="import">${state.imports.map((x) => x.fiche
       ? `<li><span>${maandVol(x.fiche.maand)}</span><span>Loonfiche</span><span>${eur(uitbetaald(x.fiche))}</span>${x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.fiche.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.fiche.controles.join('; '))}</small>` : ''}</li>`
       : x.werk
         ? `<li${x.ouder ? ' class="ouder"' : ''}><span>${maandVol(x.werk.maand)}</span><span>Time statement</span><span>situatie ${x.werk.situatie.split('-').reverse().join('/')}</span><span>${x.werk.dagen.filter((d) => d.gepresteerd > 0).length} dagen</span>${x.ouder ? '<small>overgeslagen: er is een recentere versie van deze maand</small>' : x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.werk.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.werk.controles.join('; '))}</small>` : ''}</li>`
         : `<li class="slecht"><span>${esc(x.naam)}</span><small>${esc(x.fout)}</small></li>`).join('')}</ul>
-      ${ok.length ? `<button type="button" class="knop primair" id="opslaan"${state.bezig ? ' disabled' : ''}>${ok.length} ${ok.length === 1 ? 'bestand' : 'bestanden'} opslaan</button>` : ''}` : ''}
-    ${state.melding ? `<p class="melding">${esc(state.melding)}</p>` : ''}
-    <h2>Exporteren</h2>
-    <p class="uitleg">Alle fiches als CSV (één regel per fiche).</p>
-    <button type="button" class="knop" id="export"${state.fiches.length ? '' : ' disabled'}>CSV downloaden</button>
-    <h2>Account</h2>
-    <button type="button" class="knop" id="afmelden">Afmelden</button>`;
+      ${ok.length ? `<button type="button" class="knop primair" id="opslaan"${state.bezig ? ' disabled' : ''}>${ok.length} ${ok.length === 1 ? 'bestand' : 'bestanden'} opslaan</button>` : ''}` : '';
+  return `
+    <header class="kop"><p class="sub">Aangemeld als ${esc(state.user.email || state.user.displayName)}</p><h1>Gegevens</h1></header>
+    ${tegels([
+      { label: 'Loonfiches', waarde: String(state.fiches.length), detail: state.fiches.length ? `${state.fiches.reduce((a, f) => (f.maand < a ? f.maand : a), '9999').slice(0, 4)} – ${state.fiches.reduce((a, f) => (f.maand > a ? f.maand : a), '0').slice(0, 4)}` : '', kleur: KLEUR.netto },
+      { label: 'Time statements', waarde: String(state.werk.length), detail: state.werk.length ? `${state.werk.reduce((a, w) => (w.maand < a ? w.maand : a), '9999').slice(0, 4)} – ${state.werk.reduce((a, w) => (w.maand > a ? w.maand : a), '0').slice(0, 4)}` : '', kleur: KLEUR.verg },
+    ])}
+    ${raster(
+      kaart('PDF\'s inlezen', `<p class="uitleg">Loonfiches en time statements uit bpost4me, door elkaar. Ze worden in je browser gelezen; de PDF zelf wordt niet opgeslagen.
+        Rijksregisternummer, IBAN, stamnummer en adres worden overgeslagen. Een bestand dat je opnieuw inleest, overschrijft de vorige versie.</p>
+        <label class="knop primair">PDF's kiezen<input id="bestanden" type="file" accept="application/pdf,.pdf" multiple hidden></label>
+        ${lijstImport}${state.melding ? `<p class="melding">${esc(state.melding)}</p>` : ''}`, { breed: true }),
+      kaart('Exporteren', `<p class="uitleg">Alle fiches als CSV, één regel per fiche.</p>
+        <button type="button" class="knop" id="export"${state.fiches.length ? '' : ' disabled'}>CSV downloaden</button>`),
+      kaart('Account', `<p class="uitleg">Je gegevens staan in je eigen Firebase-database, alleen zichtbaar voor jou.</p>
+        <button type="button" class="knop" id="afmelden">Afmelden</button>`),
+    )}`;
 }
 
 function leeg() {
-  return `<section class="leeg"><h1>Loon</h1><p>Nog geen loonfiches ingelezen.</p><a class="knop primair" href="#/gegevens">Loonfiches inlezen</a></section>`;
+  return `<section class="leeg"><h2>Nog geen loonfiches</h2><p>Lees je loonfiches uit bpost4me in om je overzicht te zien.</p><a class="knop primair" href="#/gegevens">Loonfiches inlezen</a></section>`;
 }
 
 function loginScherm() {
-  return `<section class="leeg"><h1>Loon</h1><p>Je loonfiches, per maand en per jaar.</p>
+  return `<section class="leeg login"><div class="logo" aria-hidden="true"><svg viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#161A21"/><rect x="16" y="34" width="8" height="14" rx="2" fill="#00a888"/><rect x="28" y="26" width="8" height="22" rx="2" fill="#9887ef"/><rect x="40" y="16" width="8" height="32" rx="2" fill="#338ced"/></svg></div>
+    <h1>Loon</h1><p>Je loonfiches en werkdagen in één overzicht.</p>
     <button type="button" class="knop primair" id="aanmelden">Aanmelden met Google</button>
     ${state.fout ? `<p class="slecht">${esc(state.fout)}</p>` : ''}</section>`;
 }
