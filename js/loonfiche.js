@@ -34,7 +34,8 @@ function regels(items) {
 
 // "€ 2.083,91", "2.083,91 €" of "1.972,76" → getal; anders null.
 function bedragVan(t) {
-  const s = t.replace(/€/g, '').trim();
+  if (/[a-z]/i.test(t)) return null;
+  const s = t.replace(/[^\d.,-]/g, ''); // ook een €-teken dat in oudere PDF's als vreemd teken staat
   return BEDRAG.test(s) ? getal(s) : null;
 }
 
@@ -43,7 +44,7 @@ function bedragRegel(segs) {
   if (segs.length < 2) return null;
   const b = bedragVan(segs[segs.length - 1].t);
   if (b == null) return null;
-  const tekst = segs.slice(0, -1).map((s) => s.t).join(' ').replace(/€/g, '').trim();
+  const tekst = segs.slice(0, -1).map((s) => s.t).join(' ').replace(/€/g, '').replace(/[^\p{L}\p{N}\s.,:;()\/%'+&-]/gu, '').replace(/\s+/g, ' ').trim();
   return tekst ? { tekst, bedrag: b } : null;
 }
 
@@ -91,22 +92,45 @@ export function parseLoonfiche(paginas) {
   };
   const hoofd = nieuwBlok();
   let herb = null; // huidig herberekeningsblok
-  let prest = null; // 'dagen' | 'uren'
+  let prest = null; // 'dagen' | 'uren' | 'oud'
+  let oudeMaanden = 0;
 
   paginas.forEach((items) => {
     // Pagina 1 heeft twee kolommen (gegevens links, bedragen rechts): apart lezen zodat regels niet samensmelten.
-    const kop = items.find((i) => /^Loon en bedragen betaald/i.test(i.str.trim()));
+    const kop = items.find((i) => /^Loon en bedragen betaald/i.test(i.str.trim()))
+      ?? items.find((i) => /^Rubriek$/i.test(i.str.trim()) && i.x > 150); // oudere weddefiche
     const grens = kop ? kop.x - 5 : null;
     const blokken = grens == null ? [items] : [items.filter((i) => i.x < grens), items.filter((i) => i.x >= grens)];
     for (const segs of blokken.flatMap(regels)) {
       const alles = segs.map((s) => s.t).join(' ');
 
-      const titel = alles.match(/^Loonfiche van (.+)$/i);
+      const titel = alles.match(/^(?:Loonfiche|Weddefiche) van (.+)$/i);
       if (titel) { fiche.maand ||= maandVan(titel[1]); continue; }
 
-      const h = alles.match(/^Herberekening van (.+)$/i);
+      const h = alles.match(/^Herberekening van (.+)$/i) ?? alles.match(/^Regularisatie ((?:januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+\d{4})$/i);
       if (h) { herb = { maand: maandVan(h[1]), ...nieuwBlok(), totaal: null }; fiche.herberekeningen.push(herb); prest = null; continue; }
 
+      // Oudere fiches: "Overzicht betaalde en onbetaalde uren | … dagen", met de huidige maand en de vorige naast elkaar
+      if (/^Overzicht betaalde en onbetaalde/i.test(alles)) { prest = 'oud'; oudeMaanden = 0; continue; }
+      if (prest === 'oud') {
+        if (/^(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+\d{4}/i.test(alles)) {
+          if (++oudeMaanden > 1) prest = null; // alleen de eerste (huidige) maand
+          continue;
+        }
+        if (/^Maaltijdcheques|^Op te nemen/i.test(alles)) { prest = null; }
+        else {
+          for (let k = 0; k < segs.length - 1; k++) {
+            const pc = segs[k].t.match(/^(8([A-Z])\w{2})\s+(.+)$/);
+            const w = segs[k + 1].t;
+            if (!pc || !/^\d+(?:[.,]\d+)?$/.test(w)) continue;
+            const waarde = parseFloat(w.replace(',', '.'));
+            const soort = pc[2] === 'D' || /\(dg\)|dagen/i.test(pc[3]) ? 'dagen' : 'uren';
+            const tekst = soort === 'uren' ? `${Math.floor(waarde)}:${String(Math.round((waarde % 1) * 60)).padStart(2, '0')}` : w;
+            fiche.prestaties[soort].push({ code: pc[1], omschrijving: pc[3], waarde: r2(waarde), tekst });
+          }
+          continue;
+        }
+      }
       if (/^Prestatie \(Dagen\)/i.test(alles)) { prest = 'dagen'; continue; }
       if (/^Prestatie \(Uren\)/i.test(alles)) { prest = 'uren'; continue; }
 
@@ -153,6 +177,7 @@ export function parseLoonfiche(paginas) {
       if (!br) continue;
       if (/IBAN/i.test(br.tekst)) continue;
       if (/^Bedrag/i.test(br.tekst)) continue;
+      if (!herb && hoofd.totalen.totaal != null) continue; // na "Totaal netto bedrag": geen bedragen van de hoofdfiche meer (bv. overuren op pagina 2)
       if (herb) {
         const t = br.tekst.match(/^Totaal\s+(.+)$/i);
         if (t && maandVan(t[1])) { herb.totaal = br.bedrag; herb = null; continue; }
@@ -165,7 +190,7 @@ export function parseLoonfiche(paginas) {
 
   fiche.secties = hoofd.secties;
   fiche.totalen = hoofd.totalen;
-  if (!fiche.maand) throw new Error('Geen bpost-loonfiche: de titel "Loonfiche van …" ontbreekt.');
+  if (!fiche.maand) throw new Error('Geen bpost-loonfiche: de titel "Loonfiche van …" of "Weddefiche van …" ontbreekt.');
   if (fiche.totalen.netto == null && fiche.totalen.totaal == null) throw new Error('Geen nettobedrag gevonden op de fiche.');
 
   // Controles: kloppen de getallen onderling? Zo niet, dan is er iets verkeerd gelezen.
@@ -195,7 +220,10 @@ const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build';
 export async function leesItems(bestand) {
   const pdfjs = await import(`${PDFJS}/pdf.min.mjs`);
   pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS}/pdf.worker.min.mjs`;
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(await bestand.arrayBuffer()) }).promise;
+  const data = new Uint8Array(await bestand.arrayBuffer());
+  // Sommige oude fiches van bpost hebben de extensie .JPG maar zijn eigenlijk PDF's: kijk naar de inhoud.
+  if (String.fromCharCode(...data.slice(0, 5)) !== '%PDF-') throw new Error('Geen PDF. Een echte foto of scan bevat geen tekst die de app kan lezen.');
+  const doc = await pdfjs.getDocument({ data }).promise;
   const paginas = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const c = await (await doc.getPage(p)).getTextContent();

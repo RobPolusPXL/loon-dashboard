@@ -241,9 +241,9 @@ function gegevensScherm() {
       { label: 'Time statements', waarde: String(state.werk.length), detail: state.werk.length ? `${state.werk.reduce((a, w) => (w.maand < a ? w.maand : a), '9999').slice(0, 4)} – ${state.werk.reduce((a, w) => (w.maand > a ? w.maand : a), '0').slice(0, 4)}` : '', kleur: KLEUR.verg },
     ])}
     ${raster(
-      kaart('PDF\'s inlezen', `<p class="uitleg">Loonfiches en time statements uit bpost4me, door elkaar. Ze worden in je browser gelezen; de PDF zelf wordt niet opgeslagen.
+      kaart('PDF\'s inlezen', `<p class="uitleg">Loonfiches, weddefiches en time statements uit bpost4me, door elkaar (ook oude fiches met de extensie .JPG). Ze worden in je browser gelezen; de PDF zelf wordt niet opgeslagen.
         Rijksregisternummer, IBAN, stamnummer en adres worden overgeslagen. Een bestand dat je opnieuw inleest, overschrijft de vorige versie.</p>
-        <label class="knop primair">PDF's kiezen<input id="bestanden" type="file" accept="application/pdf,.pdf" multiple hidden></label>
+        <label class="knop primair">PDF's kiezen<input id="bestanden" type="file" accept="application/pdf,.pdf,.jpg,.jpeg,image/jpeg" multiple hidden></label>
         ${lijstImport}${state.melding ? `<p class="melding">${esc(state.melding)}</p>` : ''}`, { breed: true }),
       kaart('Exporteren', `<p class="uitleg">Alle fiches als CSV, één regel per fiche.</p>
         <button type="button" class="knop" id="export"${state.fiches.length ? '' : ' disabled'}>CSV downloaden</button>`),
