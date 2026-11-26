@@ -310,7 +310,12 @@ document.addEventListener('click', async (e) => {
   if (!t) return;
   if (t.dataset.werkjaar) { state.werkJaar = +t.dataset.werkjaar; render(); return; }
   if (t.dataset.jaar) { state.jaar = +t.dataset.jaar; if (t.dataset.naar) location.hash = t.dataset.naar; render(); if (t.tagName !== 'A') return; }
-  if (t.dataset.href && !e.target.closest('a')) { location.hash = t.dataset.href; return; }
+  if (t.dataset.href && !e.target.closest('a')) {
+    // Aanraakscherm: eerste tik toont de tooltip, tweede tik op hetzelfde element opent het
+    if (laatsteAanwijzer === 'touch' && t.dataset.tip && tipDoel !== t) { tipDoel = t; return; }
+    tipDoel = null;
+    location.hash = t.dataset.href; return;
+  }
   if (t.id === 'aanmelden') { try { await store.login(); } catch (err) { state.fout = 'Aanmelden mislukt: ' + err.message; render(); } }
   else if (t.id === 'afmelden') await store.logout();
   else if (t.id === 'export') exporteer();
@@ -406,17 +411,23 @@ function toonTip(e) {
   tip.style.left = Math.max(8, x) + 'px';
   tip.style.top = (y < 8 ? e.clientY + 18 : y) + 'px';
 }
-document.addEventListener('pointermove', toonTip);
-document.addEventListener('pointerdown', toonTip);
+let laatsteAanwijzer = 'mouse';
+let tipDoel = null; // element waarvan de tooltip na een tik openstaat
+document.addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch') toonTip(e); });
+document.addEventListener('pointerdown', (e) => {
+  laatsteAanwijzer = e.pointerType;
+  if (!e.target.closest?.('[data-tip]')) tipDoel = null;
+  toonTip(e);
+});
 document.addEventListener('focusin', (e) => {
   const el = e.target.closest?.('[data-tip]');
   if (!el) return;
   const r = el.getBoundingClientRect();
   toonTip({ target: el, clientX: r.left + r.width / 2, clientY: r.top });
 });
-document.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
+document.addEventListener('scroll', () => { tip.hidden = true; tipDoel = null; }, { passive: true });
 
-window.addEventListener('hashchange', () => { state.wis = null; state.wisWerk = null; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { tip.hidden = true; tipDoel = null; state.wis = null; state.wisWerk = null; render(); window.scrollTo(0, 0); });
 
 store.init((u) => {
   state.user = u; state.gestart = true; state.fiches = null;
