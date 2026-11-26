@@ -1,5 +1,7 @@
 import * as store from './store.js';
-import { leesPdf } from './loonfiche.js';
+import { leesItems, parseLoonfiche } from './loonfiche.js';
+import { isTimestatement, parseTimestatement } from './timestatement.js';
+import { werkScherm, werkMaandScherm } from './werk.js';
 
 const MND = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 const MAAND_VOL = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
@@ -22,7 +24,7 @@ const loopbaanDagen = (f) => prestatie(f, 'dagen', /Loopbaan/i);
 const lijn = (f, re) => som(f.secties.flatMap((s) => s.lijnen).filter((l) => re.test(l.omschrijving)), (l) => l.bedrag);
 
 const $view = document.getElementById('view');
-const state = { user: null, gestart: false, fiches: null, fout: null, imports: [], bezig: false, melding: null, jaar: null, wis: null };
+const state = { user: null, gestart: false, fiches: null, werk: [], fout: null, imports: [], bezig: false, melding: null, jaar: null, wis: null };
 
 // ---------- Jaar ----------
 function jarenVan(fiches) { return [...new Set(fiches.map((f) => +f.maand.slice(0, 4)))].sort(); }
@@ -155,17 +157,19 @@ function ficheScherm(id) {
 
 // ---------- Gegevens ----------
 function gegevensScherm() {
-  const ok = state.imports.filter((x) => x.fiche);
+  const ok = state.imports.filter((x) => x.fiche || x.werk);
   return `
     <header class="kop"><h1>Gegevens</h1><p class="sub">Aangemeld als ${esc(state.user.email || state.user.displayName)}</p></header>
-    <h2>Loonfiches inlezen</h2>
-    <p class="uitleg">Kies een of meer PDF's uit bpost4me. Ze worden in je browser gelezen; de PDF zelf wordt niet opgeslagen.
-      Rijksregisternummer, IBAN, stamnummer en adres worden overgeslagen. Een fiche die je opnieuw inleest, overschrijft de vorige versie.</p>
+    <h2>PDF's inlezen</h2>
+    <p class="uitleg">Loonfiches en time statements uit bpost4me, door elkaar. Ze worden in je browser gelezen; de PDF zelf wordt niet opgeslagen.
+      Rijksregisternummer, IBAN, stamnummer en adres worden overgeslagen. Een bestand dat je opnieuw inleest, overschrijft de vorige versie.</p>
     <label class="knop">PDF's kiezen<input id="bestanden" type="file" accept="application/pdf,.pdf" multiple hidden></label>
     ${state.imports.length ? `<ul class="import">${state.imports.map((x) => x.fiche
-      ? `<li><span>${maandVol(x.fiche.maand)}</span><span>${eur(uitbetaald(x.fiche))}</span>${x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.fiche.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.fiche.controles.join('; '))}</small>` : ''}</li>`
-      : `<li class="slecht"><span>${esc(x.naam)}</span><small>${esc(x.fout)}</small></li>`).join('')}</ul>
-      ${ok.length ? `<button type="button" class="knop primair" id="opslaan"${state.bezig ? ' disabled' : ''}>${ok.length} ${ok.length === 1 ? 'fiche' : 'fiches'} opslaan</button>` : ''}` : ''}
+      ? `<li><span>${maandVol(x.fiche.maand)}</span><span>Loonfiche</span><span>${eur(uitbetaald(x.fiche))}</span>${x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.fiche.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.fiche.controles.join('; '))}</small>` : ''}</li>`
+      : x.werk
+        ? `<li><span>${maandVol(x.werk.maand)}</span><span>Time statement</span><span>${x.werk.dagen.filter((d) => d.gepresteerd > 0).length} dagen</span>${x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.werk.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.werk.controles.join('; '))}</small>` : ''}</li>`
+        : `<li class="slecht"><span>${esc(x.naam)}</span><small>${esc(x.fout)}</small></li>`).join('')}</ul>
+      ${ok.length ? `<button type="button" class="knop primair" id="opslaan"${state.bezig ? ' disabled' : ''}>${ok.length} ${ok.length === 1 ? 'bestand' : 'bestanden'} opslaan</button>` : ''}` : ''}
     ${state.melding ? `<p class="melding">${esc(state.melding)}</p>` : ''}
     <h2>Exporteren</h2>
     <p class="uitleg">Alle fiches als CSV (één regel per fiche).</p>
@@ -189,20 +193,22 @@ function render() {
   const route = location.hash.replace(/^#/, '') || '/';
   document.querySelectorAll('nav a').forEach((a) => {
     const r = a.getAttribute('href').slice(1);
-    a.classList.toggle('actief', r === '/' ? route === '/' || route.startsWith('/fiche/') : route.startsWith(r));
+    a.classList.toggle('actief', r === '/' ? route === '/' || route.startsWith('/fiche/') : route === r || route.startsWith(r + '/'));
   });
   document.querySelector('nav').hidden = !state.user;
   if (!state.gestart) { $view.innerHTML = '<p class="laden">Laden…</p>'; return; }
   if (!state.user) { $view.innerHTML = loginScherm(); return; }
   if (!state.fiches) { $view.innerHTML = state.fout ? `<p class="slecht">${esc(state.fout)}</p>` : '<p class="laden">Laden…</p>'; return; }
   if (route.startsWith('/fiche/')) $view.innerHTML = ficheScherm(decodeURIComponent(route.slice(7)));
+  else if (route.startsWith('/werk/')) $view.innerHTML = werkMaandScherm(state, decodeURIComponent(route.slice(6)));
+  else if (route === '/werk') $view.innerHTML = werkScherm(state);
   else if (route === '/jaren') $view.innerHTML = jarenScherm();
   else if (route === '/gegevens') $view.innerHTML = gegevensScherm();
   else $view.innerHTML = jaarScherm();
 }
 
 async function laad() {
-  try { state.fiches = await store.laad(state.user); state.fout = null; }
+  try { [state.fiches, state.werk] = await Promise.all([store.laad(state.user), store.laad(state.user, 'werk')]); state.fout = null; }
   catch (e) { state.fout = 'Gegevens laden mislukt: ' + e.message; }
   render();
 }
@@ -222,8 +228,9 @@ function exporteer() {
 }
 
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('button, [data-href], a[data-jaar]');
+  const t = e.target.closest('button, [data-href], a[data-jaar], a[data-werkjaar]');
   if (!t) return;
+  if (t.dataset.werkjaar) { state.werkJaar = +t.dataset.werkjaar; render(); return; }
   if (t.dataset.jaar) { state.jaar = +t.dataset.jaar; if (t.dataset.naar) location.hash = t.dataset.naar; render(); if (t.tagName !== 'A') return; }
   if (t.dataset.href && !e.target.closest('a')) { location.hash = t.dataset.href; return; }
   if (t.id === 'aanmelden') { try { await store.login(); } catch (err) { state.fout = 'Aanmelden mislukt: ' + err.message; render(); } }
@@ -232,13 +239,21 @@ document.addEventListener('click', async (e) => {
   else if (t.id === 'opslaan') {
     state.bezig = true; render();
     try {
-      const n = await store.bewaar(state.user, state.imports.filter((x) => x.fiche).map((x) => x.fiche));
-      state.imports = []; state.melding = `${n} ${n === 1 ? 'fiche' : 'fiches'} opgeslagen.`;
+      const items = state.imports.filter((x) => x.fiche || x.werk).map((x) => (x.fiche
+        ? { col: 'loonfiches', id: store.ficheId(x.fiche), data: x.fiche }
+        : { col: 'werk', id: x.werk.maand, data: x.werk }));
+      const n = await store.bewaar(state.user, items);
+      state.imports = []; state.melding = `${n} ${n === 1 ? 'bestand' : 'bestanden'} opgeslagen.`;
       await laad();
     } catch (err) { state.melding = 'Opslaan mislukt: ' + err.message; }
     state.bezig = false; render();
   } else if (t.dataset.wis) { state.wis = t.dataset.wis; render(); }
-  else if (t.hasAttribute('data-wis-nee')) { state.wis = null; render(); }
+  else if (t.hasAttribute('data-wis-nee')) { state.wis = null; state.wisWerk = null; render(); }
+  else if (t.dataset.wiswerk) { state.wisWerk = t.dataset.wiswerk; render(); }
+  else if (t.dataset.wiswerkJa) {
+    try { await store.verwijder(state.user, t.dataset.wiswerkJa, 'werk'); state.wisWerk = null; location.hash = '#/werk'; await laad(); }
+    catch (err) { state.fout = 'Verwijderen mislukt: ' + err.message; render(); }
+  }
   else if (t.dataset.wisJa) {
     try { await store.verwijder(state.user, t.dataset.wisJa); state.wis = null; location.hash = '#/'; await laad(); }
     catch (err) { state.fout = 'Verwijderen mislukt: ' + err.message; render(); }
@@ -250,19 +265,28 @@ document.addEventListener('change', async (e) => {
   const bestanden = [...e.target.files];
   state.melding = 'Lezen…'; state.imports = []; render();
   const bestaand = new Set(state.fiches.map((f) => f.id));
+  const bestaandWerk = new Set(state.werk.map((w) => w.id));
   state.imports = [];
   for (const b of bestanden) {
     try {
-      const fiche = await leesPdf(b);
-      fiche.ingelezen = new Date().toISOString();
-      state.imports.push({ naam: b.name, fiche, bestaat: bestaand.has(store.ficheId(fiche)) });
+      const paginas = await leesItems(b);
+      if (isTimestatement(paginas)) {
+        const werk = parseTimestatement(paginas);
+        werk.ingelezen = new Date().toISOString();
+        state.imports.push({ naam: b.name, werk, bestaat: bestaandWerk.has(werk.maand) });
+      } else {
+        const fiche = parseLoonfiche(paginas);
+        fiche.ingelezen = new Date().toISOString();
+        state.imports.push({ naam: b.name, fiche, bestaat: bestaand.has(store.ficheId(fiche)) });
+      }
     } catch (err) { state.imports.push({ naam: b.name, fout: err.message }); }
   }
-  state.imports.sort((a, b) => (a.fiche?.maand ?? '').localeCompare(b.fiche?.maand ?? ''));
+  const sleutel = (x) => (x.fiche ? `${x.fiche.maand}a` : x.werk ? `${x.werk.maand}b` : '');
+  state.imports.sort((a, b) => sleutel(a).localeCompare(sleutel(b)));
   state.melding = null; render();
 });
 
-window.addEventListener('hashchange', () => { state.wis = null; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { state.wis = null; state.wisWerk = null; render(); window.scrollTo(0, 0); });
 
 store.init((u) => {
   state.user = u; state.gestart = true; state.fiches = null;

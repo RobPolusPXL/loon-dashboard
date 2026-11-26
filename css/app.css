@@ -109,3 +109,28 @@ details .lijst tr:last-child th, details .lijst tr:last-child td { border-bottom
   main { padding-top: 36px; }
   h1 { font-size: 32px; }
 }
+
+/* Werk: jaarkalender */
+.kalender { display: grid; gap: 3px; margin-bottom: 6px; }
+.k-rij { display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 8px; text-decoration: none; }
+.k-rij[href]:hover span { color: var(--tekst); }
+.k-rij span { font-size: 11px; color: var(--mute); }
+.k-cellen { display: grid; grid-template-columns: repeat(31, minmax(0, 1fr)); gap: 2px; }
+.k-cellen i { display: block; aspect-ratio: 1; max-height: 18px; border-radius: 2px; }
+.k-as b { font-size: 10px; font-weight: 400; color: var(--mute); text-align: center; }
+.k-werk { background: var(--tekst); }
+.k-meer { background: var(--slecht); }
+.k-afw { background: transparent; box-shadow: inset 0 0 0 1px #5B6472; }
+.k-vrij { background: #1A1F27; }
+.k-leeg { background: transparent; box-shadow: inset 0 0 0 1px var(--lijn); }
+.k-geen { visibility: hidden; }
+.legende { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--mute); margin: 8px 0 0; }
+.legende span { display: flex; align-items: center; gap: 6px; }
+.legende i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.balken.wd div { display: grid; grid-template-columns: 44px 1fr 60px; align-items: center; gap: 12px; padding: 4px 0; font-variant-numeric: tabular-nums; }
+.balken.wd span { color: var(--mute); font-size: 13px; }
+.balken.wd b { font-weight: 500; text-align: right; font-size: 14px; }
+.tabel small { color: var(--mute); font-size: 11px; }
+.tabel.dagen tr.vrij th, .tabel.dagen tr.vrij td { color: var(--mute); }
+.tabel.dagen tr.weekend th { color: #5B6472; }

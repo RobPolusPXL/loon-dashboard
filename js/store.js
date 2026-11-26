@@ -1,5 +1,6 @@
 // Opslag: Firebase (Auth + Firestore) of, met ?demo in de URL, een lokaal bestand om te testen.
-// Firestore: users/{uid}/loonfiches/{YYYY-MM_bedrag} = uitgelezen loonfiche (zie loonfiche.js).
+// Firestore: users/{uid}/loonfiches/{YYYY-MM_bedrag} = uitgelezen loonfiche (zie loonfiche.js)
+//            users/{uid}/werk/{YYYY-MM} = uitgelezen time statement (zie timestatement.js)
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -46,34 +47,37 @@ export async function logout() { if (fb) await fb.a.signOut(fb.auth); }
 // in dezelfde maand (ander bedrag) komt ernaast.
 export const ficheId = (f) => `${f.maand}_${Math.round((f.totalen.totaal ?? f.totalen.netto) * 100)}`;
 
-export async function laad(user) {
+// col = 'loonfiches' of 'werk'
+export async function laad(user, col = 'loonfiches') {
   if (user.demo) {
     if (!demo) {
       const r = await fetch('demo-data.json', { cache: 'no-store' });
       demo = r.ok ? await r.json() : {};
     }
-    return Object.entries(demo).map(([id, d]) => ({ id, ...d }));
+    demo[col] ||= {};
+    return Object.entries(demo[col]).map(([id, d]) => ({ id, ...d }));
   }
   const { db, f } = fb;
-  const snap = await f.getDocs(f.collection(db, 'users', user.uid, 'loonfiches'));
+  const snap = await f.getDocs(f.collection(db, 'users', user.uid, col));
   const lijst = [];
   snap.forEach((d) => lijst.push({ id: d.id, ...d.data() }));
   return lijst;
 }
 
-export async function bewaar(user, fiches) {
-  if (user.demo) { for (const x of fiches) demo[ficheId(x)] = x; return fiches.length; }
+// items = [{ col, id, data }]
+export async function bewaar(user, items) {
+  if (user.demo) { for (const x of items) (demo[x.col] ||= {})[x.id] = x.data; return items.length; }
   const { db, f } = fb;
-  for (let i = 0; i < fiches.length; i += 400) {
+  for (let i = 0; i < items.length; i += 400) {
     const batch = f.writeBatch(db);
-    for (const x of fiches.slice(i, i + 400)) batch.set(f.doc(db, 'users', user.uid, 'loonfiches', ficheId(x)), x);
+    for (const x of items.slice(i, i + 400)) batch.set(f.doc(db, 'users', user.uid, x.col, x.id), x.data);
     await batch.commit();
   }
-  return fiches.length;
+  return items.length;
 }
 
-export async function verwijder(user, id) {
-  if (user.demo) { delete demo[id]; return; }
+export async function verwijder(user, id, col = 'loonfiches') {
+  if (user.demo) { delete demo[col]?.[id]; return; }
   const { db, f } = fb;
-  await f.deleteDoc(f.doc(db, 'users', user.uid, 'loonfiches', id));
+  await f.deleteDoc(f.doc(db, 'users', user.uid, col, id));
 }

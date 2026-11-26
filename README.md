@@ -1,9 +1,11 @@
 # Loon
 
-Een PWA die je bpost-loonfiches toont per maand en per jaar: bruto, RSZ, bedrijfsvoorheffing, netto,
+Een PWA die je bpost-loonfiches en time statements toont. Loonfiches per maand en per jaar: bruto, RSZ, bedrijfsvoorheffing, netto,
 regularisaties, gewerkte dagen en uren, maaltijdcheques, fietsvergoeding, index en jaarwedde.
 
-Je leest de PDF's uit bpost4me in via **Gegevens**. Ze worden in je browser gelezen (pdf.js); alleen de
+Time statements (tabblad Werk): gewerkte dagen en uren per dag in een jaarkalender, meerprestaties, toelages, afwezigheden en het verlofsaldo.
+
+Je leest de PDF's uit bpost4me in via **Gegevens** (beide soorten door elkaar). Ze worden in je browser gelezen (pdf.js); alleen de
 uitgelezen bedragen gaan naar je eigen Firestore-database achter een Google-login. De PDF zelf,
 rijksregisternummer, IBAN, stamnummer en adres worden niet bewaard. Er staat geen loondata in deze repo.
 

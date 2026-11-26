@@ -190,9 +190,9 @@ export function parseLoonfiche(paginas) {
   return fiche;
 }
 
-// Browser: PDF-bestand → tekstitems per pagina (pdf.js van een CDN, alleen geladen als je een fiche inleest).
+// Browser: PDF-bestand → tekstitems per pagina (pdf.js van een CDN, alleen geladen als je een PDF inleest).
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build';
-export async function leesPdf(bestand) {
+export async function leesItems(bestand) {
   const pdfjs = await import(`${PDFJS}/pdf.min.mjs`);
   pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS}/pdf.worker.min.mjs`;
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await bestand.arrayBuffer()) }).promise;
@@ -201,5 +201,5 @@ export async function leesPdf(bestand) {
     const c = await (await doc.getPage(p)).getTextContent();
     paginas.push(c.items.map((i) => ({ str: i.str, x: i.transform[4], y: i.transform[5], w: i.width })));
   }
-  return parseLoonfiche(paginas);
+  return paginas;
 }
