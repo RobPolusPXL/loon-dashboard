@@ -18,8 +18,9 @@ export const GROEPEN = [
   { k: 'ziekte', naam: 'Ziekte', re: /ziek/i },
   { k: 'loopbaan', naam: 'Loopbaanonderbreking', re: /loopbaan|tijdskrediet|ouderschap/i },
   { k: 'rust', naam: 'Rust', re: /rust|compensatie|recup/i },
-  { k: 'verlof', naam: 'Verlof', re: /verlof|feestdag|vakantie/i },
-  { k: 'andere', naam: 'Andere', re: /.*/ },
+  { k: 'feestdag', naam: 'Feestdag', re: /feestdag/i },
+  { k: 'verlof', naam: 'Verlof', re: /verlof|vakantie/i },
+  { k: 'andere', naam: 'Overig', re: /.*/ },
 ];
 // Codes waarvan de omschrijving de groep niet verraadt (UB1 = gewaarborgd maandloon bij ziekte).
 const VASTE_CODES = { UB1: 'ziekte' };
@@ -68,37 +69,49 @@ function maandCijfers(m) {
 
 const som = (lijst, k) => lijst.reduce((a, x) => a + (x[k] ?? 0), 0);
 
-function kalender(maanden, codes) {
+// Jaaroverzicht: 12 maandkalenders (ma–zo) met een gekleurd bolletje per afwezigheid.
+function kalender(maanden, codes, jaar) {
   const perYm = Object.fromEntries(maanden.map((m) => [m.maand, m]));
   const gebruikt = new Set();
-  for (const m of maanden) for (const d of m.dagen) {
-    if (d.afwezig && !gewerkt(d)) gebruikt.add(dagGroep(d, codes));
-    else if (!gewerkt(d) && typeof d.gepland === 'number' && d.gepland > 0) gebruikt.add('niet');
-  }
-  const jaar = maanden[0].maand.slice(0, 4);
-  const rijen = MND.map((naam, i) => {
+  let meer = false;
+  const maandBlok = (i) => {
     const ym = `${jaar}-${String(i + 1).padStart(2, '0')}`;
     const m = perYm[ym];
-    const aantal = new Date(+jaar, i + 1, 0).getDate();
-    const cellen = Array.from({ length: 31 }, (_, j) => {
-      if (j >= aantal) return '<i class="k-geen"></i>';
-      const d = m?.dagen.find((x) => +x.d.slice(8, 10) === j + 1);
-      const datum = `${j + 1} ${naam}`;
-      if (!m || !d) return `<i class="k-leeg" title="${datum}: geen gegevens"></i>`;
-      const wd = WD_VOL[d.wd];
-      if (d.afwezig && !gewerkt(d)) return `<i class="k-${dagGroep(d, codes)}" title="${esc(`${wd} ${datum}: ${afwTekst(d, codes)}`)}"></i>`;
-      if (!gewerkt(d)) {
+    const aantal = new Date(jaar, i + 1, 0).getDate();
+    const start = (new Date(jaar, i, 1).getDay() + 6) % 7; // ma = 0
+    const cellen = [];
+    for (let j = 0; j < start; j++) cellen.push('<span></span>');
+    for (let dag = 1; dag <= aantal; dag++) {
+      const wd = (start + dag - 1) % 7;
+      const d = m?.dagen.find((x) => +x.d.slice(8, 10) === dag);
+      const datum = `${WD_VOL[wd]} ${dag} ${MND[i]}`;
+      let klasse = 'k-leeg', tip = `${datum}: geen time statement`;
+      if (d) {
         const gepland = typeof d.gepland === 'number' && d.gepland > 0;
-        return `<i class="${gepland ? 'k-niet' : 'k-vrij'}" title="${esc(`${wd} ${datum}: ${gepland ? 'niet gewerkt, geen afwezigheidscode' : 'rustdag (geen uren gepland)'}`)}"></i>`;
+        if (d.afwezig && !gewerkt(d)) { klasse = `k-${dagGroep(d, codes)}`; tip = `${datum}: ${afwTekst(d, codes)}`; }
+        else if (gewerkt(d)) {
+          const m2 = typeof d.meer === 'number' && d.meer > 0;
+          klasse = m2 ? 'k-werk k-meer' : 'k-werk';
+          if (m2) meer = true;
+          const extra = [d.afwezig ? afwTekst(d, codes) : '', m2 ? `meerprestatie ${uren(d.meer)}` : '', d.nacht ? 'nachttoelage' : '', d.zesde ? '6de dag' : ''].filter(Boolean).join(', ');
+          tip = `${datum}: ${uren(d.gepresteerd)} gewerkt${extra ? `, ${extra}` : ''}`;
+        } else if (gepland) { klasse = 'k-niet'; tip = `${datum}: niet gewerkt, geen afwezigheidscode`; }
+        else { klasse = 'k-vrij'; tip = `${datum}: rustdag`; }
+        if (!['k-werk', 'k-werk k-meer', 'k-vrij', 'k-leeg'].includes(klasse)) gebruikt.add(klasse.slice(2));
       }
-      const extra = [d.afwezig ? afwTekst(d, codes) : '', typeof d.meer === 'number' && d.meer > 0 ? `meerprestatie ${uren(d.meer)}` : '', d.nacht ? 'nachttoelage' : '', d.zesde ? '6de dag' : ''].filter(Boolean).join(', ');
-      const klasse = typeof d.meer === 'number' && d.meer > 0 ? 'k-meer' : 'k-werk';
-      return `<i class="${klasse}" style="opacity:${Math.min(1, 0.45 + d.gepresteerd / 480 * 0.55).toFixed(2)}" title="${esc(`${wd} ${datum}: ${uren(d.gepresteerd)} gewerkt${extra ? `, ${extra}` : ''}`)}"></i>`;
-    }).join('');
-    return `<a class="k-rij" ${m ? `href="#/werk/${ym}"` : ''}><span>${naam}</span><div class="k-cellen">${cellen}</div></a>`;
-  }).join('');
-  return `<div class="kalender">${rijen}<div class="k-rij k-as"><span></span><div class="k-cellen">${Array.from({ length: 31 }, (_, j) => `<b>${(j + 1) % 5 === 0 || j === 0 ? j + 1 : ''}</b>`).join('')}</div></div></div>
-    <p class="legende"><span><i class="k-werk"></i>gewerkt</span><span><i class="k-meer"></i>meerprestatie</span>${GROEPEN.filter((g) => gebruikt.has(g.k)).map((g) => `<span><i class="k-${g.k}"></i>${g.naam.toLowerCase()}</span>`).join('')}<span><i class="k-vrij"></i>rustdag</span>${gebruikt.has('niet') ? '<span><i class="k-niet"></i>niet gewerkt, zonder code</span>' : ''}<span><i class="k-leeg"></i>geen time statement</span></p>`;
+      cellen.push(`<span class="d ${klasse}" title="${esc(tip)}">${dag}</span>`);
+    }
+    return `<a class="mk${m ? '' : ' zonder'}"${m ? ` href="#/werk/${ym}"` : ''}><b>${MAAND_VOL[i]}</b>
+      <div class="mk-rooster">${['m', 'd', 'w', 'd', 'v', 'z', 'z'].map((x) => `<i>${x}</i>`).join('')}${cellen.join('')}</div></a>`;
+  };
+  const blokken = MND.map((_, i) => maandBlok(i)).join('');
+  const leg = [
+    ...GROEPEN.filter((g) => gebruikt.has(g.k)).map((g) => `<span><i class="d k-${g.k}"></i>${g.naam}</span>`),
+    meer ? '<span><i class="d k-werk k-meer"></i>Meerprestatie</span>' : '',
+    '<span><i class="d k-vrij"></i>Rustdag</span>',
+    gebruikt.has('niet') ? '<span><i class="d k-niet"></i>Niet gewerkt, zonder code</span>' : '',
+  ].join('');
+  return `<div class="jaarkal">${blokken}</div><p class="legende">${leg}</p>`;
 }
 
 function perWeekdag(maanden) {
@@ -138,7 +151,7 @@ export function werkScherm(state) {
       <div><dt>6de dag</dt><dd>${som(c, 'zesde')} <small>dagen</small></dd></div>
       <div><dt>Afwezig</dt><dd>${som(c, 'afwezig')} <small>dagen</small></dd></div>
     </dl>
-    ${kalender(maanden, codes)}
+    ${kalender(maanden, codes, jaar)}
     ${ontbreekt.length ? `<p class="noot">Geen time statement voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''}
     ${(() => { const pg = perGroep(maanden, codes); return pg.length ? `<h2>Afwezigheden</h2>
       <table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip k-${g.k}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
