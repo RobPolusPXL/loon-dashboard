@@ -62,6 +62,8 @@ const TOTALEN = [
   [/^Nettoloon van de maand$/i, 'netto'], [/^Regularisatie$/i, 'regularisatie'], [/^Totaal netto bedrag$/i, 'totaal'],
 ];
 const totaalSleutel = (t) => TOTALEN.find(([re]) => re.test(t))?.[1] ?? null;
+// Op oudere fiches staat "Regularisatie" soms op dezelfde regel als de maaltijdcheques: alleen het laatste stuk telt.
+const EIND = [[/Nettoloon van de maand$/i, 'netto'], [/Regularisatie$/i, 'regularisatie'], [/Totaal netto bedrag$/i, 'totaal']];
 
 function maandVan(tekst) {
   const m = tekst.match(/(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+(\d{4})/i);
@@ -76,7 +78,7 @@ function voegToe(blok, br) {
     blok.secties[blok.secties.length - 1].lijnen.push({ code: c[1], omschrijving: c[2], bedrag: br.bedrag });
     return;
   }
-  const k = totaalSleutel(br.tekst);
+  const k = totaalSleutel(br.tekst) ?? EIND.find(([re]) => re.test(br.tekst))?.[1] ?? null;
   if (k) blok.totalen[k] = br.bedrag;
   if (k === 'netto' || k === 'regularisatie' || k === 'totaal') return;
   blok.secties.push({ naam: br.tekst, sleutel: k, bedrag: br.bedrag, lijnen: [] });
@@ -103,7 +105,7 @@ export function parseLoonfiche(paginas) {
       if (titel) { fiche.maand ||= maandVan(titel[1]); continue; }
 
       const h = alles.match(/^Herberekening van (.+)$/i);
-      if (h) { herb = { maand: maandVan(h[1]), ...nieuwBlok(), totaal: null }; fiche.herberekeningen.push(herb); continue; }
+      if (h) { herb = { maand: maandVan(h[1]), ...nieuwBlok(), totaal: null }; fiche.herberekeningen.push(herb); prest = null; continue; }
 
       if (/^Prestatie \(Dagen\)/i.test(alles)) { prest = 'dagen'; continue; }
       if (/^Prestatie \(Uren\)/i.test(alles)) { prest = 'uren'; continue; }
@@ -139,7 +141,13 @@ export function parseLoonfiche(paginas) {
         continue;
       }
 
-      // Maaltijdcheques los op pagina 2 ("Maaltijdcheques" met het aantal eronder) wordt al via pagina 1 gelezen.
+      // Oudere fiches hebben geen aantal op pagina 1, alleen "Maaltijdcheque €8,00-1,34   3" op pagina 2.
+      const mc = segs[0].t.match(/^Maaltijdcheque\s*€?\s*[\d,]+\s*-\s*[\d,]+(?:\s+(\d+))?$/i);
+      if (mc && !herb) {
+        const n = mc[1] ?? segs[1]?.t.match(/^\d+$/)?.[0];
+        if (n != null && fiche.maaltijdcheques == null) fiche.maaltijdcheques = +n;
+        if (segs.length <= 2) continue;
+      }
 
       const br = bedragRegel(segs);
       if (!br) continue;
