@@ -34,6 +34,36 @@ function dagGroep(d, codes) {
   return groepVan(c.code, codes);
 }
 
+// Belgische wettelijke feestdagen. Die staan op de time statement zonder afwezigheidscode
+// (alleen de vrije wettelijke feestdagen hebben er een, U24).
+function pasen(j) { // anonieme Gregoriaanse berekening
+  const a = j % 19, b = Math.floor(j / 100), c = j % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  return new Date(Date.UTC(j, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1));
+}
+const feestCache = {};
+export function feestdagNaam(iso) {
+  const j = +iso.slice(0, 4);
+  if (!feestCache[j]) {
+    const p = pasen(j), plus = (n) => new Date(p.getTime() + n * 864e5).toISOString().slice(0, 10);
+    feestCache[j] = {
+      [`${j}-01-01`]: 'Nieuwjaar', [plus(1)]: 'Paasmaandag', [`${j}-05-01`]: 'Dag van de Arbeid', [plus(39)]: 'O.L.H. Hemelvaart',
+      [plus(50)]: 'Pinkstermaandag', [`${j}-07-21`]: 'Nationale feestdag', [`${j}-08-15`]: 'O.L.V. Hemelvaart',
+      [`${j}-11-01`]: 'Allerheiligen', [`${j}-11-11`]: 'Wapenstilstand', [`${j}-12-25`]: 'Kerstmis',
+    };
+  }
+  return feestCache[j][iso] ?? null;
+}
+// Niet gewerkt, geen code, wel een werkdag volgens het rooster, en een wettelijke feestdag
+const isGepland = (d) => (typeof d.gepland === 'number' && d.gepland > 0) || (typeof d.contract === 'number' && d.contract > 0);
+const wettelijkeFeestdag = (d) => (!gewerkt(d) && !d.afwezig && isGepland(d) ? feestdagNaam(d.d) : null);
+// Groep van een hele afwezige dag (of null)
+function afwezigGroep(d, codes) {
+  if (d.afwezig && !gewerkt(d)) return dagGroep(d, codes);
+  return wettelijkeFeestdag(d) ? 'feestdag' : null;
+}
+
 const afwTekst = (d, codes) => (d.afwCodes?.length
   ? d.afwCodes.map((c) => `${codes[c.code] ?? c.code} (${uren(c.min)})`).join(', ')
   : `afwezig (${d.afwezig})`);
@@ -47,6 +77,14 @@ function perGroep(maanden, codes) {
     t[g].dagen++; t[g].min += c.min ?? 0;
     t[g].codes[c.code] ||= { dagen: 0, min: 0 };
     t[g].codes[c.code].dagen++; t[g].codes[c.code].min += c.min ?? 0;
+  }
+  for (const m of maanden) for (const d of m.dagen) {
+    if (!wettelijkeFeestdag(d)) continue;
+    const min = typeof d.gepland === 'number' ? d.gepland : 0;
+    t.feestdag ||= { dagen: 0, min: 0, codes: {} };
+    t.feestdag.dagen++; t.feestdag.min += min;
+    t.feestdag.codes['—'] ||= { dagen: 0, min: 0 };
+    t.feestdag.codes['—'].dagen++; t.feestdag.codes['—'].min += min;
   }
   return GROEPEN.filter((g) => t[g.k]).map((g) => ({ ...g, ...t[g.k] }));
 }
@@ -96,7 +134,8 @@ function kalender(maanden, codes, jaar) {
           if (m2) meer = true;
           const extra = [d.afwezig ? afwTekst(d, codes) : '', m2 ? `meerprestatie ${uren(d.meer)}` : '', d.nacht ? 'nachttoelage' : '', d.zesde ? '6de dag' : ''].filter(Boolean).join(', ');
           tip = `${datum}: ${uren(d.gepresteerd)} gewerkt${extra ? `, ${extra}` : ''}`;
-        } else if (gepland) { klasse = 'k-niet'; tip = `${datum}: niet gewerkt, geen afwezigheidscode`; }
+        } else if (wettelijkeFeestdag(d)) { klasse = 'k-feestdag'; tip = `${datum}: ${wettelijkeFeestdag(d)} (wettelijke feestdag)`; }
+        else if (gepland) { klasse = 'k-niet'; tip = `${datum}: niet gewerkt, geen afwezigheidscode`; }
         else { klasse = 'k-vrij'; tip = `${datum}: rustdag`; }
         if (!['k-werk', 'k-werk k-meer', 'k-vrij', 'k-leeg'].includes(klasse)) gebruikt.add(klasse.slice(2));
       }
@@ -117,7 +156,7 @@ function kalender(maanden, codes, jaar) {
 
 function groepDagenJaar(maanden, codes) {
   const g = {};
-  for (const m of maanden) for (const d of m.dagen) if (d.afwezig && !gewerkt(d)) { const k = dagGroep(d, codes); g[k] = (g[k] ?? 0) + 1; }
+  for (const m of maanden) for (const d of m.dagen) { const k = afwezigGroep(d, codes); if (k) g[k] = (g[k] ?? 0) + 1; }
   return g;
 }
 
@@ -139,7 +178,7 @@ export function werkScherm(state) {
   const codes = Object.assign({}, ...[...alles].sort((a, b) => (a.situatie || '').localeCompare(b.situatie || '')).map((m) => m.codes || {}));
   const c = maanden.map((m) => {
     const g = {};
-    for (const d of m.dagen) if (d.afwezig && !gewerkt(d)) { const k = dagGroep(d, codes); g[k] = (g[k] ?? 0) + 1; }
+    for (const d of m.dagen) { const k = afwezigGroep(d, codes); if (k) g[k] = (g[k] ?? 0) + 1; }
     return { ym: m.maand, ...maandCijfers(m), g };
   });
   const sorteer = (lijst) => GROEP_VOLGORDE.map((k) => GROEPEN.find((g) => g.k === k)).filter((g) => lijst.has(g.k));
@@ -175,7 +214,7 @@ export function werkScherm(state) {
     ], { fmt: (v) => uren(Math.round(v * 60)), asFmt: (v) => `${v} u`, hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) })}
     ${(() => { const pg = perGroep(maanden, codes); return pg.length ? `<h2>Afwezigheden in ${jaar}</h2>
       <table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip" style="background:${GROEP_KLEUR[g.k]}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
-        ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>` : ''; })()}
+        ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(code === '—' ? 'Wettelijke feestdag (zonder code op de time statement)' : codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>` : ''; })()}
     ${jaren.length > 1 ? `<h2>Afwezigheden per jaar</h2>
       ${balken(jaren.map((j) => ({ label: String(j), waarden: groepDagenJaar(alles.filter((m) => +m.maand.slice(0, 4) === j), codes) })),
         groepenAlle.map((g) => ({ k: g.k, naam: g.naam, kleur: GROEP_KLEUR[g.k] })), { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}` })}` : ''}
@@ -215,7 +254,7 @@ export function werkMaandScherm(state, ym) {
       <thead><tr><th>Dag</th><th>Gepland</th><th>Gepresteerd</th><th>Meer</th><th>ARAB</th><th>Uitbl.</th><th>Nacht</th><th>6de dag</th><th>Afwezig</th></tr></thead>
       <tbody>${m.dagen.map((d) => `<tr class="${gewerkt(d) ? '' : 'vrij'}${d.wd >= 5 ? ' weekend' : ''}"><th>${WD[d.wd]} ${+d.d.slice(8, 10)}</th>
         <td>${typeof d.gepland === 'number' ? uren(d.gepland) : cel(d.gepland)}</td><td>${typeof d.gepresteerd === 'number' ? uren(d.gepresteerd) : cel(d.gepresteerd)}</td>
-        <td>${typeof d.meer === 'number' ? uren(d.meer) : cel(d.meer)}</td><td>${cel(d.arab)}</td><td>${cel(d.uitblijven)}</td><td>${cel(d.nacht)}</td><td>${cel(d.zesde)}</td><td>${d.afwezig ? esc(afwTekst(d, m.codes || {})) : ''}</td></tr>`).join('')}</tbody>
+        <td>${typeof d.meer === 'number' ? uren(d.meer) : cel(d.meer)}</td><td>${cel(d.arab)}</td><td>${cel(d.uitblijven)}</td><td>${cel(d.nacht)}</td><td>${cel(d.zesde)}</td><td>${d.afwezig ? esc(afwTekst(d, m.codes || {})) : wettelijkeFeestdag(d) ? esc(`${wettelijkeFeestdag(d)} (wettelijke feestdag)`) : ''}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th>Totaal</th><td>${uren(m.totalen.gepland)}</td><td>${uren(m.totalen.gepresteerd)}</td><td>${uren(m.totalen.meer)}</td><td colspan="5"></td></tr></tfoot>
     </table></div>
     <p class="acties">${state.wisWerk === ym
