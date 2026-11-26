@@ -3,7 +3,7 @@
 
 export const KLEUR = {
   netto: '#338ced', rsz: '#e76624', bv: '#00a888', inh: '#d28e05', // waar gaat je bruto naartoe
-  verg: '#00a888', regul: '#9887ef', // samenstelling uitbetaald (netto blauw)
+  verg: '#00a888', andere: '#d28e05', regul: '#9887ef', // samenstelling uitbetaald (netto blauw); gevalideerd in die volgorde
   enkel: '#338ced', // één reeks
   werk: '#5B6472', meer: '#e76624',
 };

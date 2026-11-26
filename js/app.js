@@ -46,6 +46,16 @@ const brutoTot = (f) => (f.totalen.bruto ?? 0) + (f.totalen.brutoNiet ?? 0);
 const verg = (f) => f.totalen.vergoedingen ?? 0;
 const nettoLoon = (f) => (f.totalen.netto ?? 0) - verg(f); // nettoloon zonder vergoedingen
 const regul = (f) => f.totalen.regularisatie ?? 0;
+// Vergoedingen opgesplitst: fietsvergoeding apart, de rest (indien aanwezig) als andere vergoedingen
+const fiets = (f) => (f.secties.find((x) => x.sleutel === 'vergoedingen')?.lijnen || []).filter((l) => /Fietsvergoeding/i.test(l.omschrijving)).reduce((a, l) => a + l.bedrag, 0);
+const andereVerg = (f) => Math.round((verg(f) - fiets(f)) * 100) / 100;
+// Reeksen voor "uitbetaald": andere vergoedingen alleen als ze voorkomen
+const uitReeksen = (waarde) => [
+  { naam: 'Netto loon', kleur: KLEUR.netto, waarden: waarde(nettoLoon) },
+  { naam: 'Fietsvergoeding', kleur: KLEUR.verg, waarden: waarde(fiets) },
+  { naam: 'Andere vergoedingen', kleur: KLEUR.andere, waarden: waarde(andereVerg) },
+  { naam: 'Regularisatie', kleur: KLEUR.regul, waarden: waarde(regul) },
+].filter((r) => r.naam === 'Netto loon' || r.waarden.some((v) => v && Math.abs(v) >= 0.01));
 const ingehouden = (f) => -((f.totalen.sociale ?? 0) + (f.totalen.voorheffing ?? 0) + (f.totalen.inhoudingen ?? 0));
 const eurK = (v) => { if (Math.abs(v) < 1000) return `€ ${f0(v)}`; const k = v / 1000; return `€ ${Math.abs(k) >= 10 || Number.isInteger(k) ? f0(k) : nf(1).format(k)}K`; };
 
@@ -65,11 +75,7 @@ function jaarScherm() {
 
   const perMaand = Array.from({ length: 12 }, (_, i) => maandFiches(lijst, i + 1));
   const reeks = (fn) => perMaand.map((l) => (l.length ? som(l, fn) : null));
-  const grafiek = kolommen(MND, [
-    { naam: 'Netto loon', kleur: KLEUR.netto, waarden: reeks(nettoLoon) },
-    { naam: 'Vergoedingen', kleur: KLEUR.verg, waarden: reeks(verg) },
-    { naam: 'Regularisatie', kleur: KLEUR.regul, waarden: reeks(regul) },
-  ], { fmt: eur, asFmt: eurK, hrefs: perMaand.map((l) => (l.length ? `#/fiche/${l[0].id}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) });
+  const grafiek = kolommen(MND, uitReeksen(reeks), { fmt: eur, asFmt: eurK, hrefs: perMaand.map((l) => (l.length ? `#/fiche/${l[0].id}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) });
 
   const verdeel = verdeelbalk([
     { naam: 'Netto loon', v: som(lijst, nettoLoon) ?? 0, kleur: KLEUR.netto },
@@ -116,11 +122,7 @@ function jarenScherm() {
   const jl = jaren.map(String);
   const tipExtra = perJaar.map(({ l }) => `${n(l)} ${n(l) === 1 ? 'maand' : 'maanden'} ingelezen`);
 
-  const uitPerJaar = kolommen(jl, [
-    { naam: 'Netto loon', kleur: KLEUR.netto, waarden: perJaar.map(({ l }) => som(l, nettoLoon)) },
-    { naam: 'Vergoedingen', kleur: KLEUR.verg, waarden: perJaar.map(({ l }) => som(l, verg)) },
-    { naam: 'Regularisatie', kleur: KLEUR.regul, waarden: perJaar.map(({ l }) => som(l, regul)) },
-  ], { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), topLabel: perJaar.map(({ l }) => eurK(som(l, uitbetaald))) });
+  const uitPerJaar = kolommen(jl, uitReeksen((fn) => perJaar.map(({ l }) => som(l, fn))), { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), topLabel: perJaar.map(({ l }) => eurK(som(l, uitbetaald))) });
 
   // Netto loon per maand, alle maanden van de eerste tot de laatste fiche
   const eerste = fiches.reduce((a, f) => (f.maand < a ? f.maand : a), '9999');
