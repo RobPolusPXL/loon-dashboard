@@ -2,6 +2,7 @@ import * as store from './store.js';
 import { leesItems, parseLoonfiche } from './loonfiche.js';
 import { isTimestatement, parseTimestatement } from './timestatement.js';
 import { werkScherm, werkMaandScherm } from './werk.js';
+import { kolommen, lijn as lijnGrafiek, balken, verdeelbalk, KLEUR } from './charts.js';
 
 const MND = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 const MAAND_VOL = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
@@ -29,6 +30,16 @@ const state = { user: null, gestart: false, fiches: null, werk: [], fout: null, 
 // ---------- Jaar ----------
 function jarenVan(fiches) { return [...new Set(fiches.map((f) => +f.maand.slice(0, 4)))].sort(); }
 
+// Afgeleide bedragen per fiche
+const brutoTot = (f) => (f.totalen.bruto ?? 0) + (f.totalen.brutoNiet ?? 0);
+const verg = (f) => f.totalen.vergoedingen ?? 0;
+const nettoLoon = (f) => (f.totalen.netto ?? 0) - verg(f); // nettoloon zonder vergoedingen
+const regul = (f) => f.totalen.regularisatie ?? 0;
+const ingehouden = (f) => -((f.totalen.sociale ?? 0) + (f.totalen.voorheffing ?? 0) + (f.totalen.inhoudingen ?? 0));
+const eurK = (v) => { if (Math.abs(v) < 1000) return `€ ${f0(v)}`; const k = v / 1000; return `€ ${Math.abs(k) >= 10 || Number.isInteger(k) ? f0(k) : nf(1).format(k)}K`; };
+
+function maandFiches(lijst, m) { return lijst.filter((f) => +f.maand.slice(5, 7) === m); }
+
 function jaarScherm() {
   const fiches = state.fiches;
   if (!fiches.length) return leeg();
@@ -38,83 +49,114 @@ function jaarScherm() {
   const aanwezig = new Set(lijst.map((f) => +f.maand.slice(5, 7)));
   const laatsteMaand = jaar === new Date().getFullYear() ? Math.max(...aanwezig) : 12;
   const ontbreekt = MND.filter((_, i) => i + 1 <= laatsteMaand && !aanwezig.has(i + 1));
+  const uit = som(lijst, uitbetaald);
+  const nMaanden = aanwezig.size;
 
-  const kerncijfers = [
-    ['Uitbetaald', eur0(som(lijst, uitbetaald))],
-    ['Bruto', eur0(som(lijst, (f) => f.totalen.bruto))],
-    ['RSZ', eur0(som(lijst, (f) => f.totalen.sociale))],
-    ['Bedrijfsvoorheffing', eur0(som(lijst, (f) => f.totalen.voorheffing))],
-    ['Gewerkte dagen', getal(som(lijst, gewerkteDagen))],
-    ['Maaltijdcheques', getal(som(lijst, (f) => f.maaltijdcheques))],
-  ];
+  const perMaand = Array.from({ length: 12 }, (_, i) => maandFiches(lijst, i + 1));
+  const reeks = (fn) => perMaand.map((l) => (l.length ? som(l, fn) : null));
+  const grafiek = kolommen(MND, [
+    { naam: 'Netto loon', kleur: KLEUR.netto, waarden: reeks(nettoLoon) },
+    { naam: 'Vergoedingen', kleur: KLEUR.verg, waarden: reeks(verg) },
+    { naam: 'Regularisatie', kleur: KLEUR.regul, waarden: reeks(regul) },
+  ], { fmt: eur, asFmt: eurK, hrefs: perMaand.map((l) => (l.length ? `#/fiche/${l[0].id}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) });
+
+  const verdeel = verdeelbalk([
+    { naam: 'Netto loon', v: som(lijst, nettoLoon) ?? 0, kleur: KLEUR.netto },
+    { naam: 'RSZ', v: -(som(lijst, (f) => f.totalen.sociale) ?? 0), kleur: KLEUR.rsz },
+    { naam: 'Bedrijfsvoorheffing', v: -(som(lijst, (f) => f.totalen.voorheffing) ?? 0), kleur: KLEUR.bv },
+    { naam: 'Inhoudingen', v: -(som(lijst, (f) => f.totalen.inhoudingen) ?? 0), kleur: KLEUR.inh },
+  ], { fmt: eur0 });
 
   return `
     <header class="kop">
       <h1>Loon</h1>
       ${jaren.length > 1 ? `<div class="jaren" role="group" aria-label="Jaar">${jaren.map((j) => `<button type="button" data-jaar="${j}" class="${j === jaar ? 'aan' : ''}" aria-pressed="${j === jaar}">${j}</button>`).join('')}</div>` : `<p class="sub">${jaar}</p>`}
     </header>
-    <dl class="kern">${kerncijfers.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
-    ${maandGrafiek(lijst)}
+    <div class="held"><span>Uitbetaald in ${jaar}</span><b>${eur0(uit)}</b><small>${nMaanden} ${nMaanden === 1 ? 'maand' : 'maanden'} · gemiddeld ${eur0(uit / nMaanden)} per maand</small></div>
+    <dl class="kern">
+      <div><dt>Bruto</dt><dd>${eur0(som(lijst, brutoTot))}</dd></div>
+      <div><dt>Ingehouden</dt><dd>${eur0(som(lijst, ingehouden))}</dd></div>
+      <div><dt>Vergoedingen</dt><dd>${eur0(som(lijst, verg))}</dd></div>
+      <div><dt>Gewerkte dagen</dt><dd>${getal(som(lijst, gewerkteDagen))}</dd></div>
+      <div><dt>Maaltijdcheques</dt><dd>${getal(som(lijst, (f) => f.maaltijdcheques))}</dd></div>
+    </dl>
+    <h2>Uitbetaald per maand</h2>
+    ${grafiek}
     ${ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''}
+    <h2>Waar gaat je bruto naartoe</h2>
+    ${verdeel}
+    <h2>Per maand</h2>
     <div class="scroll"><table class="tabel">
-      <thead><tr><th>Maand</th><th>Bruto</th><th>RSZ</th><th>Voorheffing</th><th>Netto</th><th>Regularisatie</th><th>Uitbetaald</th><th>Dagen</th><th>Cheques</th></tr></thead>
+      <thead><tr><th>Maand</th><th>Bruto</th><th>Ingehouden</th><th>Vergoedingen</th><th>Uitbetaald</th><th>Dagen</th></tr></thead>
       <tbody>${lijst.map((f) => `<tr data-href="#/fiche/${esc(f.id)}">
-        <th><a href="#/fiche/${esc(f.id)}">${maandKort(f.maand)}</a></th>
-        <td>${eur(f.totalen.bruto)}</td><td>${eur(f.totalen.sociale)}</td><td>${eur(f.totalen.voorheffing)}</td>
-        <td>${eur(f.totalen.netto)}</td><td>${f.totalen.regularisatie ? eur(f.totalen.regularisatie) : ''}</td>
-        <td><b>${eur(uitbetaald(f))}</b></td><td>${getal(gewerkteDagen(f))}</td><td>${getal(f.maaltijdcheques)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><th>Totaal</th><td>${eur(som(lijst, (f) => f.totalen.bruto))}</td><td>${eur(som(lijst, (f) => f.totalen.sociale))}</td>
-        <td>${eur(som(lijst, (f) => f.totalen.voorheffing))}</td><td>${eur(som(lijst, (f) => f.totalen.netto))}</td>
-        <td>${eur(som(lijst, (f) => f.totalen.regularisatie))}</td><td><b>${eur(som(lijst, uitbetaald))}</b></td>
-        <td>${getal(som(lijst, gewerkteDagen))}</td><td>${getal(som(lijst, (f) => f.maaltijdcheques))}</td></tr></tfoot>
+        <th><a href="#/fiche/${esc(f.id)}">${maandKort(f.maand)}</a>${f.controles?.length ? ' <span class="slecht" title="Totalen kloppen niet">•</span>' : ''}</th>
+        <td>${eur0(brutoTot(f))}</td><td>${eur0(ingehouden(f))}</td><td>${verg(f) ? eur0(verg(f)) : ''}</td>
+        <td><b>${eur(uitbetaald(f))}</b>${regul(f) ? `<small>incl. ${eur0(regul(f))} regularisatie</small>` : ''}</td><td>${getal(gewerkteDagen(f))}</td></tr>`).join('')}</tbody>
     </table></div>`;
-}
-
-// Staafjes per maand: netto (wit) met de regularisatie erbovenop (grijs).
-function maandGrafiek(lijst) {
-  const perMaand = Array.from({ length: 12 }, (_, i) => {
-    const m = lijst.filter((f) => +f.maand.slice(5, 7) === i + 1);
-    return { netto: som(m, (f) => f.totalen.netto) ?? 0, regul: som(m, (f) => f.totalen.regularisatie) ?? 0, id: m[0]?.id };
-  });
-  const max = Math.max(...perMaand.map((p) => p.netto + Math.max(0, p.regul)), 1);
-  const W = 120, H = 100, b = W / 12, h = (v) => (Math.max(0, v) / max) * (H - 4);
-  return `<figure class="grafiek"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Uitbetaald per maand">
-    ${perMaand.map((p, i) => {
-      const x = i * b + b * 0.22, w = b * 0.56, hn = h(p.netto), hr = h(p.regul);
-      const tip = p.id ? `${MND[i]}: netto ${eur(p.netto)}${p.regul ? `, regularisatie ${eur(p.regul)}` : ''}` : `${MND[i]}: geen fiche`;
-      return `<g${p.id ? ` data-href="#/fiche/${esc(p.id)}" class="klik"` : ''}><title>${esc(tip)}</title>
-        <rect x="${i * b}" y="0" width="${b}" height="${H}" fill="transparent"/>
-        ${p.id ? `<rect x="${x}" y="${H - hn}" width="${w}" height="${hn}" class="b-netto"/>` : `<rect x="${x}" y="${H - 0.6}" width="${w}" height="0.6" class="b-leeg"/>`}
-        ${hr ? `<rect x="${x}" y="${H - hn - hr - 0.8}" width="${w}" height="${hr}" class="b-regul"/>` : ''}</g>`;
-    }).join('')}
-  </svg><figcaption>${MND.map((m) => `<span>${m}</span>`).join('')}</figcaption></figure>`;
 }
 
 // ---------- Alle jaren ----------
 function jarenScherm() {
   const fiches = state.fiches;
   if (!fiches.length) return leeg();
-  const rijen = jarenVan(fiches).map((j) => {
-    const l = fiches.filter((f) => +f.maand.slice(0, 4) === j);
-    return {
-      j, n: new Set(l.map((f) => f.maand)).size, bruto: som(l, (f) => f.totalen.bruto), rsz: som(l, (f) => f.totalen.sociale),
-      bv: som(l, (f) => f.totalen.voorheffing), verg: som(l, (f) => f.totalen.vergoedingen), uit: som(l, uitbetaald),
-      dagen: som(l, gewerkteDagen), uren: som(l, gewerkteUren), lb: som(l, loopbaanDagen), mc: som(l, (f) => f.maaltijdcheques),
-      fiets: lijn({ secties: l.flatMap((f) => f.secties) }, /Fietsvergoeding/i),
-    };
+  const jaren = jarenVan(fiches);
+  const perJaar = jaren.map((j) => ({ j, l: fiches.filter((f) => +f.maand.slice(0, 4) === j) }));
+  const n = (l) => new Set(l.map((f) => f.maand)).size;
+  const jl = jaren.map(String);
+  const tipExtra = perJaar.map(({ l }) => `${n(l)} ${n(l) === 1 ? 'maand' : 'maanden'} ingelezen`);
+
+  const uitPerJaar = kolommen(jl, [
+    { naam: 'Netto loon', kleur: KLEUR.netto, waarden: perJaar.map(({ l }) => som(l, nettoLoon)) },
+    { naam: 'Vergoedingen', kleur: KLEUR.verg, waarden: perJaar.map(({ l }) => som(l, verg)) },
+    { naam: 'Regularisatie', kleur: KLEUR.regul, waarden: perJaar.map(({ l }) => som(l, regul)) },
+  ], { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), topLabel: perJaar.map(({ l }) => eurK(som(l, uitbetaald))) });
+
+  // Netto loon per maand, alle maanden van de eerste tot de laatste fiche
+  const eerste = fiches.reduce((a, f) => (f.maand < a ? f.maand : a), '9999');
+  const laatste = fiches.reduce((a, f) => (f.maand > a ? f.maand : a), '0000');
+  const maanden = [];
+  for (let y = +eerste.slice(0, 4), m = +eerste.slice(5, 7); `${y}-${String(m).padStart(2, '0')}` <= laatste; m === 12 ? (y++, m = 1) : m++) maanden.push(`${y}-${String(m).padStart(2, '0')}`);
+  const punt = (fn, fmt) => maanden.map((ym) => {
+    const l = fiches.filter((f) => f.maand === ym);
+    const v = l.length ? som(l, fn) : null;
+    return { label: maandKort(ym), v, href: l[0] ? `#/fiche/${l[0].id}` : null, tip: `${maandVol(ym)}: ${v == null ? 'geen fiche' : fmt(v)}` };
   });
-  const max = Math.max(...rijen.map((r) => r.uit ?? 0), 1);
+  const asLabels = maanden.map((ym, i) => ({ ym, i })).filter((x) => x.ym.endsWith('-01') || x.i === 0).map((x) => ({ i: x.i, label: x.ym.slice(0, 4) }));
+  const nettoLijn = lijnGrafiek(punt(nettoLoon, eur), { fmt: eur, asFmt: eurK, asLabels });
+  const indexLijn = lijnGrafiek(punt((f) => f.gegevens?.index ?? null, (v) => f2(v)), { fmt: (v) => f2(v), asFmt: (v) => f0(v), asLabels, hoogte: 120, nul: false });
+
+  const pct = balken(perJaar.map(({ j, l }) => ({
+    label: String(j), href: `#/jaar/${j}`,
+    waarden: { netto: som(l, nettoLoon) ?? 0, rsz: -(som(l, (f) => f.totalen.sociale) ?? 0), bv: -(som(l, (f) => f.totalen.voorheffing) ?? 0), inh: -(som(l, (f) => f.totalen.inhoudingen) ?? 0) },
+  })), [
+    { k: 'netto', naam: 'Netto loon', kleur: KLEUR.netto }, { k: 'rsz', naam: 'RSZ', kleur: KLEUR.rsz },
+    { k: 'bv', naam: 'Bedrijfsvoorheffing', kleur: KLEUR.bv }, { k: 'inh', naam: 'Inhoudingen', kleur: KLEUR.inh },
+  ], { fmt: eur0, procent: true, rechts: (r, tot) => (tot ? `${Math.round(r.waarden.netto / tot * 100)}% netto` : '') });
+
+  // kort: compacte notatie boven de kolommen en op de as; fmt: volledig in de tooltip
+  const enkel = (fn, kort, fmt = kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => som(l, fn)) }], { fmt, asFmt: kort, hoogte: 120, tipExtra, topLabel: perJaar.map(({ l }) => { const v = som(l, fn); return v == null ? null : kort(v); }) });
+
   return `
     <header class="kop"><h1>Per jaar</h1></header>
-    <div class="balken">${rijen.map((r) => `<button type="button" data-jaar="${r.j}" data-naar="#/"><span>${r.j}</span>
-      <i style="width:${((r.uit ?? 0) / max * 100).toFixed(1)}%"></i><b>${eur0(r.uit)}</b></button>`).join('')}</div>
+    <h2>Uitbetaald per jaar</h2>
+    ${uitPerJaar}
+    <h2>Netto loon per maand</h2>
+    <p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt om die fiche te openen.</p>
+    ${nettoLijn}
+    <h2>Van bruto naar netto</h2>
+    ${pct}
+    <div class="duo">
+      <section><h2>Gewerkte dagen</h2>${enkel(gewerkteDagen, (v) => f0(v))}</section>
+      <section><h2>Maaltijdcheques</h2>${enkel((f) => f.maaltijdcheques, (v) => f0(v))}</section>
+      <section><h2>Fietsvergoeding</h2>${enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)}</section>
+      <section><h2>Index</h2>${indexLijn}</section>
+    </div>
+    <h2>Overzicht</h2>
     <div class="scroll"><table class="tabel">
-      <thead><tr><th>Jaar</th><th>Maanden</th><th>Bruto</th><th>RSZ</th><th>Voorheffing</th><th>Vergoedingen</th><th>Uitbetaald</th><th>Dagen</th><th>Uren</th><th>Loopbaanond.</th><th>Cheques</th><th>Fiets</th></tr></thead>
-      <tbody>${rijen.map((r) => `<tr><th>${r.j}</th><td>${r.n}</td><td>${eur(r.bruto)}</td><td>${eur(r.rsz)}</td><td>${eur(r.bv)}</td>
-        <td>${eur(r.verg)}</td><td><b>${eur(r.uit)}</b></td><td>${getal(r.dagen)}</td><td>${getal(r.uren)}</td><td>${getal(r.lb)}</td>
-        <td>${getal(r.mc)}</td><td>${eur(r.fiets)}</td></tr>`).join('')}</tbody>
-    </table></div>
-    <p class="noot">Een jaar met minder dan 12 maanden is onvolledig ingelezen.</p>`;
+      <thead><tr><th>Jaar</th><th>Maanden</th><th>Bruto</th><th>Ingehouden</th><th>Uitbetaald</th><th>Dagen</th></tr></thead>
+      <tbody>${perJaar.map(({ j, l }) => `<tr data-href="#/jaar/${j}"><th>${j}</th><td>${n(l)}</td><td>${eur0(som(l, brutoTot))}</td><td>${eur0(som(l, ingehouden))}</td>
+        <td><b>${eur0(som(l, uitbetaald))}</b></td><td>${getal(som(l, gewerkteDagen))}</td></tr>`).join('')}</tbody>
+    </table></div>`;
 }
 
 // ---------- Eén fiche ----------
@@ -193,7 +235,7 @@ function render() {
   const route = location.hash.replace(/^#/, '') || '/';
   document.querySelectorAll('nav a').forEach((a) => {
     const r = a.getAttribute('href').slice(1);
-    a.classList.toggle('actief', r === '/' ? route === '/' || route.startsWith('/fiche/') : route === r || route.startsWith(r + '/'));
+    a.classList.toggle('actief', r === '/' ? route === '/' || route.startsWith('/fiche/') || route.startsWith('/jaar/') : route === r || route.startsWith(r + '/'));
   });
   document.querySelector('nav').hidden = !state.user;
   if (!state.gestart) { $view.innerHTML = '<p class="laden">Laden…</p>'; return; }
@@ -203,6 +245,7 @@ function render() {
   else if (route.startsWith('/werk/')) $view.innerHTML = werkMaandScherm(state, decodeURIComponent(route.slice(6)));
   else if (route === '/werk') $view.innerHTML = werkScherm(state);
   else if (route === '/jaren') $view.innerHTML = jarenScherm();
+  else if (route.startsWith('/jaar/')) { state.jaar = +route.slice(6); $view.innerHTML = jaarScherm(); }
   else if (route === '/gegevens') $view.innerHTML = gegevensScherm();
   else $view.innerHTML = jaarScherm();
 }
@@ -297,6 +340,28 @@ document.addEventListener('change', async (e) => {
   state.imports.sort((a, b) => sleutel(a).localeCompare(sleutel(b)));
   state.melding = null; render();
 });
+
+// Tooltip bij aanraken of muis (data-tip)
+const tip = document.getElementById('tip');
+function toonTip(e) {
+  const el = e.target.closest?.('[data-tip]');
+  if (!el) { tip.hidden = true; return; }
+  tip.textContent = el.dataset.tip;
+  tip.hidden = false;
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  const y = e.clientY - tip.offsetHeight - 14;
+  tip.style.left = Math.max(8, x) + 'px';
+  tip.style.top = (y < 8 ? e.clientY + 18 : y) + 'px';
+}
+document.addEventListener('pointermove', toonTip);
+document.addEventListener('pointerdown', toonTip);
+document.addEventListener('focusin', (e) => {
+  const el = e.target.closest?.('[data-tip]');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  toonTip({ target: el, clientX: r.left + r.width / 2, clientY: r.top });
+});
+document.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
 window.addEventListener('hashchange', () => { state.wis = null; state.wisWerk = null; render(); window.scrollTo(0, 0); });
 

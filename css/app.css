@@ -123,17 +123,17 @@ details .lijst tr:last-child th, details .lijst tr:last-child td { border-bottom
 .mk-rooster .d { display: flex; align-items: center; justify-content: center; width: var(--c); height: var(--c); border-radius: 50%; font-size: 8.5px;
   font-variant-numeric: tabular-nums; color: var(--zacht); line-height: 1; }
 .d.k-werk { color: var(--tekst); }
-.d.k-werk.k-meer { box-shadow: inset 0 0 0 1.5px #E8762D; }
+.d.k-werk.k-meer { box-shadow: inset 0 0 0 1.5px #e76624; }
 .d.k-leeg { color: #3A414D; }
 .d.k-vrij { background: #262B34; color: var(--mute); }
 .d.k-niet { box-shadow: inset 0 0 0 1px #4A5160; color: var(--mute); }
-.d.k-loopbaan { background: #3E9BD0; color: #fff; }
-.d.k-verlof { background: #F2BE2E; color: #1A1500; }
-.d.k-ziekte { background: #4F9A5C; color: #fff; }
-.d.k-rust { background: #8A3FE0; color: #fff; }
-.d.k-ongeval { background: #C42B36; color: #fff; }
-.d.k-feestdag { background: #EE8A92; color: #2A0C0F; }
-.d.k-andere { background: #E8762D; color: #1A0B00; }
+.d.k-loopbaan { background: #338ced; color: #fff; }
+.d.k-verlof { background: #d28e05; color: #fff; }
+.d.k-ziekte { background: #00a888; color: #fff; }
+.d.k-rust { background: #9887ef; color: #fff; }
+.d.k-ongeval { background: #eb6263; color: #fff; }
+.d.k-feestdag { background: #e24d8b; color: #fff; }
+.d.k-andere { background: #e76624; color: #fff; }
 .legende { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--mute); margin: 12px 0 0; }
 .legende span { display: flex; align-items: center; gap: 6px; }
 .legende i.d { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
@@ -151,3 +151,61 @@ details .lijst tr:last-child th, details .lijst tr:last-child td { border-bottom
 .tabel.dagen tr.vrij th, .tabel.dagen tr.vrij td { color: var(--mute); }
 .tabel.dagen tr.weekend th { color: #5B6472; }
 .import li.ouder { color: var(--mute); }
+
+/* Grafieken */
+.g { margin: 4px 0 8px; }
+.g-leg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--zacht); margin-bottom: 10px; }
+.g-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.g-leg i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.g-leg b { font-weight: 500; color: var(--tekst); font-variant-numeric: tabular-nums; margin-left: 2px; }
+.g-vlak { position: relative; margin-left: 46px; }
+.g-lijn { position: absolute; left: 0; right: 0; border-top: 1px solid #1E232B; }
+.g-lijn span { position: absolute; right: 100%; transform: translateY(-50%); padding-right: 8px; font-size: 10.5px; color: var(--mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.g-kols { position: absolute; inset: 0; display: flex; align-items: flex-end; }
+.g-kol { flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; outline: none; }
+.g-kol:hover, .g-kol:focus-visible { background: rgba(255,255,255,.035); }
+.g-kol.klik { cursor: pointer; }
+.g-stapel { width: min(24px, 64%); display: flex; flex-direction: column; gap: 2px; }
+.g-stapel i { display: block; min-height: 1px; }
+.g-stapel i:first-child { border-radius: 4px 4px 0 0; }
+.g-top { position: absolute; left: 0; right: 0; text-align: center; font-size: 10.5px; font-weight: 500; color: var(--zacht); padding-bottom: 4px; white-space: nowrap; }
+.g-as { display: flex; margin-left: 46px; margin-top: 6px; }
+.g-as span { flex: 1; text-align: center; font-size: 11px; color: var(--mute); }
+.g-as.vrij { position: relative; height: 16px; }
+.g-as.vrij span { position: absolute; transform: translateX(-50%); flex: none; }
+.g-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.g-punten { position: absolute; inset: 0; display: flex; }
+.g-pt { flex: 1; position: relative; }
+.g-pt i { position: absolute; left: 50%; width: 8px; height: 8px; margin: 0 0 -4px -4px; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg); opacity: 0; }
+.g-pt:hover { background: linear-gradient(to right, transparent calc(50% - .5px), #3A414D calc(50% - .5px), #3A414D calc(50% + .5px), transparent calc(50% + .5px)); }
+.g-pt:hover i { opacity: 1; }
+.g-pt.klik { cursor: pointer; }
+.g-balken { display: grid; gap: 6px; }
+.g-brij { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; padding: 3px 0; }
+.g-brij.klik { cursor: pointer; }
+.g-brij:hover { background: rgba(255,255,255,.025); }
+.g-brij > span { font-size: 13px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.g-brij > b { font-size: 13px; font-weight: 500; text-align: right; min-width: 70px; font-variant-numeric: tabular-nums; }
+.g-bbak { height: 14px; }
+.g-bvul { height: 100%; display: flex; gap: 2px; }
+.g-bvul i { display: block; min-width: 1px; }
+.g-bvul i:first-child { border-radius: 3px 0 0 3px; }
+.g-bvul i:last-child { border-radius: 0 3px 3px 0; }
+.g-bvul i:only-child { border-radius: 3px; }
+.g-verdeel { display: flex; gap: 2px; height: 28px; margin-bottom: 10px; }
+.g-verdeel div { display: flex; align-items: center; padding-left: 8px; border-radius: 4px; min-width: 2px; }
+.g-verdeel span { font-size: 12px; font-weight: 600; color: #fff; }
+.held { display: flex; flex-direction: column; gap: 2px; margin: 0 0 22px; }
+.held span { font-size: 13px; color: var(--mute); }
+.held b { font-size: 48px; font-weight: 600; letter-spacing: -1px; line-height: 1.1; }
+.held small { font-size: 13px; color: var(--mute); }
+.duo { display: grid; grid-template-columns: 1fr; gap: 0 40px; }
+@media (min-width: 800px) { .duo { grid-template-columns: 1fr 1fr; } }
+.tabel td small { display: block; font-size: 11px; color: var(--mute); font-weight: 400; }
+.tabel td.chips { white-space: nowrap; }
+.chips span { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
+.chips i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: #1C2129; border: 1px solid #2E3440; color: var(--tekst); font-size: 12px; padding: 7px 10px; border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.45); white-space: pre-line; line-height: 1.5; font-variant-numeric: tabular-nums; max-width: 260px; }
+.balken.wd i { background: #338ced; }
+.g-vlak.met-top { margin-top: 22px; }

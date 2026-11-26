@@ -1,3 +1,4 @@
+import { kolommen, balken, GROEP_KLEUR, GROEP_VOLGORDE, KLEUR } from './charts.js';
 // Tabblad Werk: overzichten uit de time statements.
 
 const MND = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
@@ -114,6 +115,12 @@ function kalender(maanden, codes, jaar) {
   return `<div class="jaarkal">${blokken}</div><p class="legende">${leg}</p>`;
 }
 
+function groepDagenJaar(maanden, codes) {
+  const g = {};
+  for (const m of maanden) for (const d of m.dagen) if (d.afwezig && !gewerkt(d)) { const k = dagGroep(d, codes); g[k] = (g[k] ?? 0) + 1; }
+  return g;
+}
+
 function perWeekdag(maanden) {
   const tel = Array(7).fill(0);
   for (const m of maanden) for (const d of m.dagen) if (gewerkt(d)) tel[d.wd]++;
@@ -135,7 +142,10 @@ export function werkScherm(state) {
     for (const d of m.dagen) if (d.afwezig && !gewerkt(d)) { const k = dagGroep(d, codes); g[k] = (g[k] ?? 0) + 1; }
     return { ym: m.maand, ...maandCijfers(m), g };
   });
-  const groepKol = GROEPEN.filter((gr) => c.some((x) => x.g[gr.k]));
+  const sorteer = (lijst) => GROEP_VOLGORDE.map((k) => GROEPEN.find((g) => g.k === k)).filter((g) => lijst.has(g.k));
+  const groepenJaar = sorteer(new Set(c.flatMap((x) => Object.keys(x.g))));
+  const groepenAlle = sorteer(new Set(jaren.flatMap((j) => Object.keys(groepDagenJaar(alles.filter((m) => +m.maand.slice(0, 4) === j), codes)))));
+  const perMaand = MND.map((_, i) => c.find((x) => +x.ym.slice(5, 7) === i + 1) ?? null);
   const laatste = [...alles].filter((m) => m.verlof?.length).sort((a, b) => (a.situatie || '').localeCompare(b.situatie || '')).pop();
   const ontbreekt = MND.filter((_, i) => !maanden.some((m) => +m.maand.slice(5, 7) === i + 1) && (jaar < new Date().getFullYear() || i < new Date().getMonth()));
 
@@ -153,20 +163,34 @@ export function werkScherm(state) {
     </dl>
     ${kalender(maanden, codes, jaar)}
     ${ontbreekt.length ? `<p class="noot">Geen time statement voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''}
-    ${(() => { const pg = perGroep(maanden, codes); return pg.length ? `<h2>Afwezigheden</h2>
-      <table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip k-${g.k}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
+    <h2>Dagen per maand</h2>
+    ${kolommen(MND, [
+      { naam: 'Gewerkt', kleur: KLEUR.werk, waarden: perMaand.map((x) => (x ? x.dagen : null)) },
+      ...groepenJaar.map((g) => ({ naam: g.naam, kleur: GROEP_KLEUR[g.k], waarden: perMaand.map((x) => (x ? x.g[g.k] ?? 0 : null)) })),
+    ], { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}`, asFmt: (v) => String(v), hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) })}
+    <h2>Uren per maand</h2>
+    ${kolommen(MND, [
+      { naam: 'Gewone uren', kleur: KLEUR.werk, waarden: perMaand.map((x) => (x ? (x.uren - x.meer) / 60 : null)) },
+      { naam: 'Meerprestaties', kleur: KLEUR.meer, waarden: perMaand.map((x) => (x ? x.meer / 60 : null)) },
+    ], { fmt: (v) => uren(Math.round(v * 60)), asFmt: (v) => `${v} u`, hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) })}
+    ${(() => { const pg = perGroep(maanden, codes); return pg.length ? `<h2>Afwezigheden in ${jaar}</h2>
+      <table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip" style="background:${GROEP_KLEUR[g.k]}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
         ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>` : ''; })()}
+    ${jaren.length > 1 ? `<h2>Afwezigheden per jaar</h2>
+      ${balken(jaren.map((j) => ({ label: String(j), waarden: groepDagenJaar(alles.filter((m) => +m.maand.slice(0, 4) === j), codes) })),
+        groepenAlle.map((g) => ({ k: g.k, naam: g.naam, kleur: GROEP_KLEUR[g.k] })), { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}` })}` : ''}
     <h2>Gewerkt per weekdag</h2>
     ${perWeekdag(maanden)}
     <h2>Per maand</h2>
     <div class="scroll"><table class="tabel">
-      <thead><tr><th>Maand</th><th>Dagen</th><th>Uren</th><th>Meer</th><th>Nacht</th><th>6de dag</th><th>ARAB</th><th>Uitbl. S</th><th>Uitbl. L</th>${groepKol.map((g) => `<th>${g.naam}</th>`).join('')}<th>Cheques</th></tr></thead>
+      <thead><tr><th>Maand</th><th>Gewerkt</th><th>Uren</th><th>Meer</th><th>Nacht</th><th>6de dag</th><th>Afwezig</th></tr></thead>
       <tbody>${c.map((x) => `<tr data-href="#/werk/${x.ym}"><th><a href="#/werk/${x.ym}">${maandKort(x.ym)}</a></th><td>${x.dagen}</td><td>${uren(x.uren)}</td>
-        <td>${x.meer ? uren(x.meer) : ''}</td><td>${x.nacht || ''}</td><td>${x.zesde || ''}</td><td>${x.arab || ''}</td><td>${x.s || ''}</td><td>${x.l || ''}</td>${groepKol.map((g) => `<td>${x.g[g.k] || ''}</td>`).join('')}<td>${n(x.cheques)}</td></tr>`).join('')}</tbody>
+        <td>${x.meer ? uren(x.meer) : ''}</td><td>${x.nacht || ''}</td><td>${x.zesde || ''}</td>
+        <td class="chips">${groepenJaar.filter((g) => x.g[g.k]).map((g) => `<span title="${g.naam}"><i style="background:${GROEP_KLEUR[g.k]}"></i>${x.g[g.k]}</span>`).join('')}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th>Totaal</th><td>${som(c, 'dagen')}</td><td>${uren(som(c, 'uren'))}</td><td>${uren(som(c, 'meer'))}</td><td>${som(c, 'nacht')}</td><td>${som(c, 'zesde')}</td>
-        <td>${som(c, 'arab')}</td><td>${som(c, 's')}</td><td>${som(c, 'l')}</td>${groepKol.map((g) => `<td>${c.reduce((a, x) => a + (x.g[g.k] ?? 0), 0)}</td>`).join('')}<td>${som(c, 'cheques')}</td></tr></tfoot>
+        <td class="chips">${groepenJaar.map((g) => `<span title="${g.naam}"><i style="background:${GROEP_KLEUR[g.k]}"></i>${c.reduce((a, x) => a + (x.g[g.k] ?? 0), 0)}</span>`).join('')}</td></tr></tfoot>
     </table></div>
-    <p class="noot">ARAB, uitblijven S/L, nacht en 6de dag: het aantal dagen met een waarde in die kolom. Afwezigheden: hele dagen, ingedeeld volgens de omschrijving van de code.</p>
+    <p class="noot">Afwezig: hele dagen per groep. ARAB en toelage uitblijven ongevallen staan per dag in de maanddetails.</p>
     ${laatste?.verlof?.length ? `<h2>Verlof op ${datumBE(laatste.situatie)}</h2>
       <div class="scroll"><table class="tabel"><thead><tr><th>Soort</th><th>Recht op</th><th>Opgenomen</th><th>Aangevraagd</th><th>Saldo</th></tr></thead>
       <tbody>${laatste.verlof.map((v) => { const f = v.eenheid === 'uren' ? uren : n; return `<tr><th>${esc(v.naam)} <small>(${v.eenheid})</small></th><td>${f(v.recht)}</td><td>${f(v.opgenomen)}</td><td>${f(v.aangevraagd)}</td><td><b>${f(v.saldo)}</b></td></tr>`; }).join('')}
