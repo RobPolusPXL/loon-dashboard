@@ -19,7 +19,14 @@ const som = (lijst, fn) => { const w = lijst.map(fn).filter((x) => x != null); r
 // Waarden uit één fiche
 const uitbetaald = (f) => f.totalen.totaal ?? f.totalen.netto ?? null;
 const prestatie = (f, soort, re) => f.prestaties?.[soort]?.find((p) => re.test(p.omschrijving))?.waarde ?? null;
-const gewerkteDagen = (f) => prestatie(f, 'dagen', /^Gewerkte dagen/i);
+// Gewerkte dagen: uit de time statement van die maand als die er is (oudere fiches hebben geen prestaties), anders van de fiche.
+const werkDagen = (ym) => {
+  const w = state.werk?.find((x) => x.maand === ym);
+  return w ? w.dagen.filter((d) => typeof d.gepresteerd === 'number' && d.gepresteerd > 0).length : null;
+};
+const gewerkteDagen = (f) => werkDagen(f.maand) ?? prestatie(f, 'dagen', /^Gewerkte dagen/i);
+// Som over een lijst fiches, elke maand maar één keer (twee fiches in één maand = één keer dagen)
+const somDagen = (lijst) => som([...new Map(lijst.map((f) => [f.maand, f])).values()], gewerkteDagen);
 const gewerkteUren = (f) => prestatie(f, 'uren', /^Gewerkte uren/i);
 const loopbaanDagen = (f) => prestatie(f, 'dagen', /Loopbaan/i);
 const lijn = (f, re) => som(f.secties.flatMap((s) => s.lijnen).filter((l) => re.test(l.omschrijving)), (l) => l.bedrag);
@@ -77,7 +84,7 @@ function jaarScherm() {
       <div><dt>Bruto</dt><dd>${eur0(som(lijst, brutoTot))}</dd></div>
       <div><dt>Ingehouden</dt><dd>${eur0(som(lijst, ingehouden))}</dd></div>
       <div><dt>Vergoedingen</dt><dd>${eur0(som(lijst, verg))}</dd></div>
-      <div><dt>Gewerkte dagen</dt><dd>${getal(som(lijst, gewerkteDagen))}</dd></div>
+      <div><dt>Gewerkte dagen</dt><dd>${getal(somDagen(lijst))}</dd></div>
       <div><dt>Maaltijdcheques</dt><dd>${getal(som(lijst, (f) => f.maaltijdcheques))}</dd></div>
     </dl>
     <h2>Uitbetaald per maand</h2>
@@ -134,6 +141,7 @@ function jarenScherm() {
   ], { fmt: eur0, procent: true, rechts: (r, tot) => (tot ? `${Math.round(r.waarden.netto / tot * 100)}% netto` : '') });
 
   // kort: compacte notatie boven de kolommen en op de as; fmt: volledig in de tooltip
+  const enkelL = (lfn, kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => lfn(l)) }], { fmt: kort, hoogte: 120, tipExtra, topLabel: perJaar.map(({ l }) => { const v = lfn(l); return v == null ? null : kort(v); }) });
   const enkel = (fn, kort, fmt = kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => som(l, fn)) }], { fmt, asFmt: kort, hoogte: 120, tipExtra, topLabel: perJaar.map(({ l }) => { const v = som(l, fn); return v == null ? null : kort(v); }) });
 
   return `
@@ -146,7 +154,7 @@ function jarenScherm() {
     <h2>Van bruto naar netto</h2>
     ${pct}
     <div class="duo">
-      <section><h2>Gewerkte dagen</h2>${enkel(gewerkteDagen, (v) => f0(v))}</section>
+      <section><h2>Gewerkte dagen</h2>${enkelL(somDagen, (v) => f0(v))}</section>
       <section><h2>Maaltijdcheques</h2>${enkel((f) => f.maaltijdcheques, (v) => f0(v))}</section>
       <section><h2>Fietsvergoeding</h2>${enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)}</section>
       <section><h2>Index</h2>${indexLijn}</section>
@@ -155,7 +163,7 @@ function jarenScherm() {
     <div class="scroll"><table class="tabel">
       <thead><tr><th>Jaar</th><th>Maanden</th><th>Bruto</th><th>Ingehouden</th><th>Uitbetaald</th><th>Dagen</th></tr></thead>
       <tbody>${perJaar.map(({ j, l }) => `<tr data-href="#/jaar/${j}"><th>${j}</th><td>${n(l)}</td><td>${eur0(som(l, brutoTot))}</td><td>${eur0(som(l, ingehouden))}</td>
-        <td><b>${eur0(som(l, uitbetaald))}</b></td><td>${getal(som(l, gewerkteDagen))}</td></tr>`).join('')}</tbody>
+        <td><b>${eur0(som(l, uitbetaald))}</b></td><td>${getal(somDagen(l))}</td></tr>`).join('')}</tbody>
     </table></div>`;
 }
 
