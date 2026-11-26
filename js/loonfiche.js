@@ -51,13 +51,13 @@ const SLEUTELS = {
   'Statuut': 'statuut', 'Functie': 'functie', 'Vervang. functie': 'vervangFunctie', 'Burgerlijke staat': 'burgerlijkeStaat',
   'Personen ten laste': 'personenTenLaste', 'Bedrijfsanciënniteit': 'anciënniteit', 'Geldelijk statuut 100%': 'geldelijkStatuut',
   'Contractueel stelsel': 'contractueelStelsel', 'Werkregime': 'werkregime', 'Index': 'index', 'Betalingsbarema': 'barema',
-  'Jaarwedde geïndexeerd': 'jaarwedde',
+  'Jaarwedde geïndexeerd': 'jaarwedde', 'Jaarwedde aan 100 %': 'geldelijkStatuut',
 };
 const GETALLEN = new Set(['geldelijkStatuut', 'contractueelStelsel', 'werkregime', 'index', 'jaarwedde', 'personenTenLaste']);
 
 // Vaste totalen op de fiche → korte sleutel.
 const TOTALEN = [
-  [/^Bruto onderworpen/i, 'bruto'], [/^Sociale bijdragen$/i, 'sociale'], [/^Belastbaar$/i, 'belastbaar'],
+  [/^Bruto onderworpen/i, 'bruto'], [/^Bruto niet onderworpen/i, 'brutoNiet'], [/^Sociale bijdragen$/i, 'sociale'], [/^Belastbaar$/i, 'belastbaar'],
   [/^Bedrijfsvoorheffing$/i, 'voorheffing'], [/^Inhoudingen$/i, 'inhoudingen'], [/^Vergoedingen$/i, 'vergoedingen'],
   [/^Nettoloon van de maand$/i, 'netto'], [/^Regularisatie$/i, 'regularisatie'], [/^Totaal netto bedrag$/i, 'totaal'],
 ];
@@ -115,7 +115,7 @@ export function parseLoonfiche(paginas) {
         if (!kv) continue;
         const label = kv[1].trim();
         const waarde = kv[2].replace(/€|u\/week/g, '').trim();
-        if (/maaltijdcheques|Pluxee kaart/i.test(label)) {
+        if (/maaltijdcheques|kaart$/i.test(label)) {
           const n = (waarde || segs[segs.indexOf(s) + 1]?.t || '').match(/^\d+$/);
           if (n) fiche.maaltijdcheques = +n[0];
           kvGevonden = true;
@@ -130,7 +130,7 @@ export function parseLoonfiche(paginas) {
       if (kvGevonden) continue;
 
       // Prestatietabellen: "8D00 Gewerkte dagen | 18,00" of "8U00 Gewerkte uren | 136:48"
-      const pc = segs[0].t.match(/^(8[DU]\w{2})\s+(.+)$/);
+      const pc = segs[0].t.match(/^(8[A-Z]\w{2})\s+(.+)$/);
       if (prest && pc && segs.length >= 2) {
         const w = segs[segs.length - 1].t;
         const u = w.match(/^(\d+):(\d{2})$/);
@@ -169,7 +169,7 @@ export function parseLoonfiche(paginas) {
   }
   if (t.netto != null) {
     const som = r2(fiche.secties.filter((s) => s.sleutel && s.sleutel !== 'belastbaar').reduce((a, s) => a + s.bedrag, 0));
-    if (Math.abs(som - t.netto) > 0.011) fiche.controles.push(`Bruto en inhoudingen samen ${som}, nettoloon op de fiche ${t.netto}`);
+    if (Math.abs(som - t.netto) > 0.011) fiche.controles.push(`Alle bedragen op de fiche samen ${som}, nettoloon op de fiche ${t.netto} (verschil ${r2(t.netto - som)})`);
   }
   if (t.regularisatie != null && fiche.herberekeningen.length) {
     const som = r2(fiche.herberekeningen.reduce((a, h) => a + (h.totaal ?? 0), 0));
