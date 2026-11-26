@@ -58,9 +58,13 @@ export function feestdagNaam(iso) {
 // Niet gewerkt, geen code, wel een werkdag volgens het rooster, en een wettelijke feestdag
 const isGepland = (d) => (typeof d.gepland === 'number' && d.gepland > 0) || (typeof d.contract === 'number' && d.contract > 0);
 const wettelijkeFeestdag = (d) => (!gewerkt(d) && !d.afwezig && isGepland(d) ? feestdagNaam(d.d) : null);
+// Eigen correcties: [{ van: 'YYYY-MM-DD', tot: 'YYYY-MM-DD', groep }]
+let CORR = [];
+const correctieVan = (d) => (d.afwezig ? CORR.find((c) => d.d >= c.van && d.d <= c.tot) ?? null : null);
+
 // Groep van een hele afwezige dag (of null)
 function afwezigGroep(d, codes) {
-  if (d.afwezig && !gewerkt(d)) return dagGroep(d, codes);
+  if (d.afwezig && !gewerkt(d)) return correctieVan(d)?.groep ?? dagGroep(d, codes);
   return wettelijkeFeestdag(d) ? 'feestdag' : null;
 }
 
@@ -71,8 +75,10 @@ const afwTekst = (d, codes) => (d.afwCodes?.length
 // Afwezigheden per code optellen
 function perGroep(maanden, codes) {
   const t = {};
-  for (const m of maanden) for (const d of m.dagen) for (const c of d.afwCodes || []) {
-    const g = groepVan(c.code, codes);
+  for (const m of maanden) for (const d of m.dagen) for (const c0 of d.afwCodes || []) {
+    const corr = correctieVan(d);
+    const c = corr ? { ...c0, code: `${c0.code}*` } : c0;
+    const g = corr?.groep ?? groepVan(c0.code, codes);
     t[g] ||= { dagen: 0, min: 0, codes: {} };
     t[g].dagen++; t[g].min += c.min ?? 0;
     t[g].codes[c.code] ||= { dagen: 0, min: 0 };
@@ -127,7 +133,11 @@ function kalender(maanden, codes, jaar) {
       let klasse = 'k-leeg', tip = `${datum}: geen time statement`;
       if (d) {
         const gepland = typeof d.gepland === 'number' && d.gepland > 0;
-        if (d.afwezig && !gewerkt(d)) { klasse = `k-${dagGroep(d, codes)}`; tip = `${datum}: ${afwTekst(d, codes)}`; }
+        if (d.afwezig && !gewerkt(d)) {
+          const corr = correctieVan(d);
+          klasse = `k-${corr?.groep ?? dagGroep(d, codes)}`;
+          tip = `${datum}: ${corr ? `${GROEPEN.find((g) => g.k === corr.groep)?.naam} (zelf aangepast; time statement: ${afwTekst(d, codes)})` : afwTekst(d, codes)}`;
+        }
         else if (gewerkt(d)) {
           const m2 = typeof d.meer === 'number' && d.meer > 0;
           klasse = m2 ? 'k-werk k-meer' : 'k-werk';
@@ -168,6 +178,7 @@ function perWeekdag(maanden) {
 }
 
 export function werkScherm(state) {
+  CORR = state.correcties || [];
   const alles = state.werk || [];
   if (!alles.length) {
     return `<section class="leeg"><h1>Werk</h1><p>Nog geen time statements ingelezen.</p><a class="knop primair" href="#/gegevens">Time statements inlezen</a></section>`;
@@ -214,7 +225,7 @@ export function werkScherm(state) {
     ], { fmt: (v) => uren(Math.round(v * 60)), asFmt: (v) => `${v} u`, hrefs: perMaand.map((x) => (x ? `#/werk/${x.ym}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) })}
     ${(() => { const pg = perGroep(maanden, codes); return pg.length ? `<h2>Afwezigheden in ${jaar}</h2>
       <table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip" style="background:${GROEP_KLEUR[g.k]}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
-        ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(code === '—' ? 'Wettelijke feestdag (zonder code op de time statement)' : codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>` : ''; })()}
+        ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(code === '—' ? 'Wettelijke feestdag (zonder code op de time statement)' : code.endsWith('*') ? `${codes[code.slice(0, -1)] ?? code.slice(0, -1)}, zelf aangepast` : codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>` : ''; })()}
     ${jaren.length > 1 ? `<h2>Afwezigheden per jaar</h2>
       ${balken(jaren.map((j) => ({ label: String(j), waarden: groepDagenJaar(alles.filter((m) => +m.maand.slice(0, 4) === j), codes) })),
         groepenAlle.map((g) => ({ k: g.k, naam: g.naam, kleur: GROEP_KLEUR[g.k] })), { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}` })}` : ''}
@@ -237,6 +248,7 @@ export function werkScherm(state) {
 }
 
 export function werkMaandScherm(state, ym) {
+  CORR = state.correcties || [];
   const m = (state.werk || []).find((x) => x.maand === ym);
   if (!m) return `<p class="noot">Geen time statement voor deze maand. <a href="#/werk">Terug</a></p>`;
   const c = maandCijfers(m);
@@ -254,9 +266,18 @@ export function werkMaandScherm(state, ym) {
       <thead><tr><th>Dag</th><th>Gepland</th><th>Gepresteerd</th><th>Meer</th><th>ARAB</th><th>Uitbl.</th><th>Nacht</th><th>6de dag</th><th>Afwezig</th></tr></thead>
       <tbody>${m.dagen.map((d) => `<tr class="${gewerkt(d) ? '' : 'vrij'}${d.wd >= 5 ? ' weekend' : ''}"><th>${WD[d.wd]} ${+d.d.slice(8, 10)}</th>
         <td>${typeof d.gepland === 'number' ? uren(d.gepland) : cel(d.gepland)}</td><td>${typeof d.gepresteerd === 'number' ? uren(d.gepresteerd) : cel(d.gepresteerd)}</td>
-        <td>${typeof d.meer === 'number' ? uren(d.meer) : cel(d.meer)}</td><td>${cel(d.arab)}</td><td>${cel(d.uitblijven)}</td><td>${cel(d.nacht)}</td><td>${cel(d.zesde)}</td><td>${d.afwezig ? esc(afwTekst(d, m.codes || {})) : wettelijkeFeestdag(d) ? esc(`${wettelijkeFeestdag(d)} (wettelijke feestdag)`) : ''}</td></tr>`).join('')}</tbody>
+        <td>${typeof d.meer === 'number' ? uren(d.meer) : cel(d.meer)}</td><td>${cel(d.arab)}</td><td>${cel(d.uitblijven)}</td><td>${cel(d.nacht)}</td><td>${cel(d.zesde)}</td><td>${d.afwezig ? esc(afwTekst(d, m.codes || {})) + (correctieVan(d) ? ` <small>→ ${GROEPEN.find((g) => g.k === correctieVan(d).groep)?.naam}, zelf aangepast</small>` : '') : wettelijkeFeestdag(d) ? esc(`${wettelijkeFeestdag(d)} (wettelijke feestdag)`) : ''}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th>Totaal</th><td>${uren(m.totalen.gepland)}</td><td>${uren(m.totalen.gepresteerd)}</td><td>${uren(m.totalen.meer)}</td><td colspan="5"></td></tr></tfoot>
     </table></div>
+    <h2>Afwezigheid anders indelen</h2>
+    <p class="uitleg">Klopt de code op de time statement niet meer (bijvoorbeeld ziekte die later als arbeidsongeval erkend werd)? Duid de periode aan; de afwezige dagen daarin tellen dan in de gekozen groep.</p>
+    <form id="correctie" class="correctie">
+      <label>Van <input type="date" name="van" required min="${ym}-01" max="${ym}-${String(m.dagen.length).padStart(2, '0')}"></label>
+      <label>Tot en met <input type="date" name="tot" required></label>
+      <label>Groep <select name="groep">${GROEPEN.map((g) => `<option value="${g.k}">${g.naam}</option>`).join('')}</select></label>
+      <button type="submit" class="knop">Toepassen</button>
+    </form>
+    ${CORR.length ? `<ul class="import">${[...CORR].sort((a, b) => a.van.localeCompare(b.van)).map((c) => `<li><span>${datumBE(c.van)} – ${datumBE(c.tot)}</span><span>${GROEPEN.find((g) => g.k === c.groep)?.naam}</span><button type="button" class="link" data-wiscorr="${c.van}|${c.tot}">verwijderen</button></li>`).join('')}</ul>` : ''}
     <p class="acties">${state.wisWerk === ym
       ? `Time statement van ${maandVol(ym)} verwijderen? <button type="button" class="link gevaar" data-wiswerk-ja="${ym}">Ja, verwijderen</button> <button type="button" class="link" data-wis-nee>Annuleren</button>`
       : `<button type="button" class="link" data-wiswerk="${ym}">Time statement verwijderen</button>`}</p>`;

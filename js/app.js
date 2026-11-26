@@ -259,7 +259,7 @@ function render() {
 }
 
 async function laad() {
-  try { [state.fiches, state.werk] = await Promise.all([store.laad(state.user), store.laad(state.user, 'werk')]); state.fout = null; }
+  try { [state.fiches, state.werk, state.correcties] = await Promise.all([store.laad(state.user), store.laad(state.user, 'werk'), store.laadCorrecties(state.user)]); state.fout = null; }
   catch (e) { state.fout = 'Gegevens laden mislukt: ' + e.message; }
   render();
 }
@@ -300,6 +300,12 @@ document.addEventListener('click', async (e) => {
     state.bezig = false; render();
   } else if (t.dataset.wis) { state.wis = t.dataset.wis; render(); }
   else if (t.hasAttribute('data-wis-nee')) { state.wis = null; state.wisWerk = null; render(); }
+  else if (t.dataset.wiscorr) {
+    const [van, tot] = t.dataset.wiscorr.split('|');
+    const lijst = (state.correcties || []).filter((c) => !(c.van === van && c.tot === tot));
+    try { await store.bewaarCorrecties(state.user, lijst); state.correcties = lijst; render(); }
+    catch (err) { state.fout = 'Correctie verwijderen mislukt: ' + err.message; render(); }
+  }
   else if (t.dataset.wiswerk) { state.wisWerk = t.dataset.wiswerk; render(); }
   else if (t.dataset.wiswerkJa) {
     try { await store.verwijder(state.user, t.dataset.wiswerkJa, 'werk'); state.wisWerk = null; location.hash = '#/werk'; await laad(); }
@@ -309,6 +315,18 @@ document.addEventListener('click', async (e) => {
     try { await store.verwijder(state.user, t.dataset.wisJa); state.wis = null; location.hash = '#/'; await laad(); }
     catch (err) { state.fout = 'Verwijderen mislukt: ' + err.message; render(); }
   }
+});
+
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'correctie') return;
+  e.preventDefault();
+  const fd = Object.fromEntries(new FormData(e.target).entries());
+  if (!fd.van || !fd.tot) return;
+  const [van, tot] = fd.van <= fd.tot ? [fd.van, fd.tot] : [fd.tot, fd.van];
+  const lijst = (state.correcties || []).filter((c) => c.tot < van || c.van > tot); // overlappende vervangen
+  lijst.push({ van, tot, groep: fd.groep });
+  try { await store.bewaarCorrecties(state.user, lijst); state.correcties = lijst; render(); }
+  catch (err) { state.fout = 'Correctie opslaan mislukt: ' + err.message; render(); }
 });
 
 document.addEventListener('change', async (e) => {

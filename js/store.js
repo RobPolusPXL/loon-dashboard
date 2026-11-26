@@ -76,6 +76,19 @@ export async function bewaar(user, items) {
   return items.length;
 }
 
+// Eigen correcties (afwezigheden die je zelf anders indeelt): users/{uid}/instellingen/correcties = { lijst: [{ van, tot, groep }] }
+export async function laadCorrecties(user) {
+  if (user.demo) return demo?.correcties ?? [];
+  const { db, f } = fb;
+  const snap = await f.getDoc(f.doc(db, 'users', user.uid, 'instellingen', 'correcties'));
+  return snap.exists() ? snap.data().lijst || [] : [];
+}
+export async function bewaarCorrecties(user, lijst) {
+  if (user.demo) { demo.correcties = lijst; return; }
+  const { db, f } = fb;
+  await f.setDoc(f.doc(db, 'users', user.uid, 'instellingen', 'correcties'), { lijst });
+}
+
 export async function verwijder(user, id, col = 'loonfiches') {
   if (user.demo) { delete demo[col]?.[id]; return; }
   const { db, f } = fb;
