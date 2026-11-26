@@ -157,7 +157,7 @@ function ficheScherm(id) {
 
 // ---------- Gegevens ----------
 function gegevensScherm() {
-  const ok = state.imports.filter((x) => x.fiche || x.werk);
+  const ok = state.imports.filter((x) => x.fiche || (x.werk && !x.ouder));
   return `
     <header class="kop"><h1>Gegevens</h1><p class="sub">Aangemeld als ${esc(state.user.email || state.user.displayName)}</p></header>
     <h2>PDF's inlezen</h2>
@@ -167,7 +167,7 @@ function gegevensScherm() {
     ${state.imports.length ? `<ul class="import">${state.imports.map((x) => x.fiche
       ? `<li><span>${maandVol(x.fiche.maand)}</span><span>Loonfiche</span><span>${eur(uitbetaald(x.fiche))}</span>${x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.fiche.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.fiche.controles.join('; '))}</small>` : ''}</li>`
       : x.werk
-        ? `<li><span>${maandVol(x.werk.maand)}</span><span>Time statement</span><span>${x.werk.dagen.filter((d) => d.gepresteerd > 0).length} dagen</span>${x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.werk.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.werk.controles.join('; '))}</small>` : ''}</li>`
+        ? `<li${x.ouder ? ' class="ouder"' : ''}><span>${maandVol(x.werk.maand)}</span><span>Time statement</span><span>situatie ${x.werk.situatie.split('-').reverse().join('/')}</span><span>${x.werk.dagen.filter((d) => d.gepresteerd > 0).length} dagen</span>${x.ouder ? '<small>overgeslagen: er is een recentere versie van deze maand</small>' : x.bestaat ? '<small>vervangt bestaande</small>' : ''}${x.werk.controles.length ? `<small class="slecht">totalen kloppen niet: ${esc(x.werk.controles.join('; '))}</small>` : ''}</li>`
         : `<li class="slecht"><span>${esc(x.naam)}</span><small>${esc(x.fout)}</small></li>`).join('')}</ul>
       ${ok.length ? `<button type="button" class="knop primair" id="opslaan"${state.bezig ? ' disabled' : ''}>${ok.length} ${ok.length === 1 ? 'bestand' : 'bestanden'} opslaan</button>` : ''}` : ''}
     ${state.melding ? `<p class="melding">${esc(state.melding)}</p>` : ''}
@@ -239,7 +239,7 @@ document.addEventListener('click', async (e) => {
   else if (t.id === 'opslaan') {
     state.bezig = true; render();
     try {
-      const items = state.imports.filter((x) => x.fiche || x.werk).map((x) => (x.fiche
+      const items = state.imports.filter((x) => x.fiche || (x.werk && !x.ouder)).map((x) => (x.fiche
         ? { col: 'loonfiches', id: store.ficheId(x.fiche), data: x.fiche }
         : { col: 'werk', id: x.werk.maand, data: x.werk }));
       const n = await store.bewaar(state.user, items);
@@ -273,7 +273,8 @@ document.addEventListener('change', async (e) => {
       if (isTimestatement(paginas)) {
         const werk = parseTimestatement(paginas);
         werk.ingelezen = new Date().toISOString();
-        state.imports.push({ naam: b.name, werk, bestaat: bestaandWerk.has(werk.maand) });
+        const oud = state.werk.find((w) => w.id === werk.maand);
+        state.imports.push({ naam: b.name, werk, bestaat: bestaandWerk.has(werk.maand), ouder: oud && (oud.situatie || '') > werk.situatie });
       } else {
         const fiche = parseLoonfiche(paginas);
         fiche.ingelezen = new Date().toISOString();
@@ -281,7 +282,18 @@ document.addEventListener('change', async (e) => {
       }
     } catch (err) { state.imports.push({ naam: b.name, fout: err.message }); }
   }
-  const sleutel = (x) => (x.fiche ? `${x.fiche.maand}a` : x.werk ? `${x.werk.maand}b` : '');
+  // Van dezelfde maand kan er een time statement met een latere "situatie op" zijn: alleen de laatste telt.
+  for (const x of state.imports) {
+    if (!x.werk || x.ouder) continue;
+    const later = state.imports.find((y) => y !== x && y.werk && y.werk.maand === x.werk.maand && y.werk.situatie > x.werk.situatie);
+    if (later) x.ouder = true;
+  }
+  for (const x of state.imports) {
+    if (!x.werk || x.ouder) continue;
+    const zelfde = state.imports.filter((y) => y.werk && !y.ouder && y.werk.maand === x.werk.maand);
+    if (zelfde.length > 1 && zelfde[0] !== x) x.ouder = true; // exact dubbel bestand
+  }
+  const sleutel = (x) => (x.fiche ? `${x.fiche.maand}a` : x.werk ? `${x.werk.maand}b${x.werk.situatie}` : '');
   state.imports.sort((a, b) => sleutel(a).localeCompare(sleutel(b)));
   state.melding = null; render();
 });

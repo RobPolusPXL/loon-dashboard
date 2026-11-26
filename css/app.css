@@ -134,3 +134,4 @@ details .lijst tr:last-child th, details .lijst tr:last-child td { border-bottom
 .tabel small { color: var(--mute); font-size: 11px; }
 .tabel.dagen tr.vrij th, .tabel.dagen tr.vrij td { color: var(--mute); }
 .tabel.dagen tr.weekend th { color: #5B6472; }
+.import li.ouder { color: var(--mute); }

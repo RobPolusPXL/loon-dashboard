@@ -11,6 +11,20 @@ const uren = (min) => (min == null ? '—' : `${min < 0 ? '−' : ''}${Math.floo
 const n = (v) => (v == null ? '—' : String(v));
 const datumBE = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
 
+const afwTekst = (d, codes) => (d.afwCodes?.length
+  ? d.afwCodes.map((c) => `${codes[c.code] ?? c.code} (${uren(c.min)})`).join(', ')
+  : `afwezig (${d.afwezig})`);
+
+// Afwezigheden per code optellen
+function perCode(maanden) {
+  const t = {};
+  for (const m of maanden) for (const d of m.dagen) for (const c of d.afwCodes || []) {
+    t[c.code] ||= { dagen: 0, min: 0 };
+    t[c.code].dagen++; t[c.code].min += c.min ?? 0;
+  }
+  return Object.entries(t).sort((a, b) => b[1].min - a[1].min);
+}
+
 const gewerkt = (d) => typeof d.gepresteerd === 'number' && d.gepresteerd > 0;
 
 function maandCijfers(m) {
@@ -30,7 +44,7 @@ function maandCijfers(m) {
 
 const som = (lijst, k) => lijst.reduce((a, x) => a + (x[k] ?? 0), 0);
 
-function kalender(maanden) {
+function kalender(maanden, codes) {
   const perYm = Object.fromEntries(maanden.map((m) => [m.maand, m]));
   const jaar = maanden[0].maand.slice(0, 4);
   const rijen = MND.map((naam, i) => {
@@ -43,7 +57,7 @@ function kalender(maanden) {
       const datum = `${j + 1} ${naam}`;
       if (!m || !d) return `<i class="k-leeg" title="${datum}: geen gegevens"></i>`;
       const wd = WD_VOL[d.wd];
-      if (d.afwezig) return `<i class="k-afw" title="${esc(`${wd} ${datum}: afwezig (${d.afwezig})`)}"></i>`;
+      if (d.afwezig) return `<i class="k-afw" title="${esc(`${wd} ${datum}: ${afwTekst(d, codes)}`)}"></i>`;
       if (!gewerkt(d)) return `<i class="k-vrij" title="${esc(`${wd} ${datum}: niet gewerkt`)}"></i>`;
       const extra = [typeof d.meer === 'number' && d.meer > 0 ? `meerprestatie ${uren(d.meer)}` : '', d.nacht ? 'nachttoelage' : '', d.zesde ? '6de dag' : ''].filter(Boolean).join(', ');
       const klasse = typeof d.meer === 'number' && d.meer > 0 ? 'k-meer' : 'k-werk';
@@ -71,7 +85,8 @@ export function werkScherm(state) {
   const jaar = jaren.includes(state.werkJaar) ? state.werkJaar : jaren[jaren.length - 1];
   const maanden = alles.filter((m) => +m.maand.slice(0, 4) === jaar).sort((a, b) => a.maand.localeCompare(b.maand));
   const c = maanden.map((m) => ({ ym: m.maand, ...maandCijfers(m) }));
-  const laatste = [...alles].sort((a, b) => (a.situatie || '').localeCompare(b.situatie || '')).pop();
+  const laatste = [...alles].filter((m) => m.verlof?.length).sort((a, b) => (a.situatie || '').localeCompare(b.situatie || '')).pop();
+  const codes = Object.assign({}, ...[...alles].sort((a, b) => (a.situatie || '').localeCompare(b.situatie || '')).map((m) => m.codes || {}));
   const ontbreekt = MND.filter((_, i) => !maanden.some((m) => +m.maand.slice(5, 7) === i + 1) && (jaar < new Date().getFullYear() || i < new Date().getMonth()));
 
   return `
@@ -86,8 +101,10 @@ export function werkScherm(state) {
       <div><dt>6de dag</dt><dd>${som(c, 'zesde')} <small>dagen</small></dd></div>
       <div><dt>Afwezig</dt><dd>${som(c, 'afwezig')} <small>dagen</small></dd></div>
     </dl>
-    ${kalender(maanden)}
+    ${kalender(maanden, codes)}
     ${ontbreekt.length ? `<p class="noot">Geen time statement voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''}
+    ${(() => { const pc = perCode(maanden); return pc.length ? `<h2>Afwezigheden</h2>
+      <table class="lijst">${pc.map(([code, v]) => `<tr><th><span class="code">${esc(code)}</span>${esc(codes[code] ?? '')}</th><td>${v.dagen} ${v.dagen === 1 ? 'dag' : 'dagen'} · ${uren(v.min)}</td></tr>`).join('')}</table>` : ''; })()}
     <h2>Gewerkt per weekdag</h2>
     ${perWeekdag(maanden)}
     <h2>Per maand</h2>
@@ -123,7 +140,7 @@ export function werkMaandScherm(state, ym) {
       <thead><tr><th>Dag</th><th>Gepland</th><th>Gepresteerd</th><th>Meer</th><th>ARAB</th><th>Uitbl.</th><th>Nacht</th><th>6de dag</th><th>Afwezig</th></tr></thead>
       <tbody>${m.dagen.map((d) => `<tr class="${gewerkt(d) ? '' : 'vrij'}${d.wd >= 5 ? ' weekend' : ''}"><th>${WD[d.wd]} ${+d.d.slice(8, 10)}</th>
         <td>${typeof d.gepland === 'number' ? uren(d.gepland) : cel(d.gepland)}</td><td>${typeof d.gepresteerd === 'number' ? uren(d.gepresteerd) : cel(d.gepresteerd)}</td>
-        <td>${typeof d.meer === 'number' ? uren(d.meer) : cel(d.meer)}</td><td>${cel(d.arab)}</td><td>${cel(d.uitblijven)}</td><td>${cel(d.nacht)}</td><td>${cel(d.zesde)}</td><td>${cel(d.afwezig)}</td></tr>`).join('')}</tbody>
+        <td>${typeof d.meer === 'number' ? uren(d.meer) : cel(d.meer)}</td><td>${cel(d.arab)}</td><td>${cel(d.uitblijven)}</td><td>${cel(d.nacht)}</td><td>${cel(d.zesde)}</td><td>${d.afwezig ? esc(afwTekst(d, m.codes || {})) : ''}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th>Totaal</th><td>${uren(m.totalen.gepland)}</td><td>${uren(m.totalen.gepresteerd)}</td><td>${uren(m.totalen.meer)}</td><td colspan="5"></td></tr></tfoot>
     </table></div>
     <p class="acties">${state.wisWerk === ym

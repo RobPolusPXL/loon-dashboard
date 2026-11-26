@@ -10,7 +10,7 @@ export function minuten(t) {
   return m ? (m[1] ? -1 : 1) * (+m[2] * 60 + +m[3]) : null;
 }
 
-// Kolommen in volgorde; de x-positie komt uit de kop van de tabel.
+// Kolommen; de x-positie komt uit de kop van de tabel. Meer, 6de dag e.d. staan er alleen als ze die maand voorkomen.
 const KOLOMMEN = [
   ['contract', /^Contrac/i], ['gepland', /^Geplande/i], ['gepresteerd', /^Gepres/i], ['meer', /^Meer-?$/i],
   ['arab', /^ARAB$/i], ['uitblijven', /^Toelage$/i], ['nacht', /^Nacht-?$/i], ['zesde', /^6de dag$/i], ['afwezig', /^Afwezigheids/i],
@@ -32,9 +32,11 @@ export function parseTimestatement(paginas) {
   const midden = (i) => i.x + (i.w || 0) / 2;
   const kol = KOLOMMEN.map(([k, re]) => {
     const i = items.find((x) => re.test(x.str));
-    if (!i) throw new Error(`Kolom "${k}" niet gevonden in de time statement.`);
-    return { k, x: midden(i) };
-  });
+    return i ? { k, x: midden(i) } : null;
+  }).filter(Boolean);
+  for (const k of ['gepland', 'gepresteerd', 'afwezig']) {
+    if (!kol.some((c) => c.k === k)) throw new Error(`Kolom "${k}" niet gevonden in de time statement.`);
+  }
   const kolVan = (x) => kol.reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a)).k;
 
   // Regels groeperen
@@ -46,7 +48,9 @@ export function parseTimestatement(paginas) {
   rijen.forEach((r) => r.items.sort((a, b) => a.x - b.x));
 
   const dagen = [];
-  const res = { maand, situatie, dagen, totalen: {}, verlof: [], rust: [], maaltijdcheques: null };
+  const res = { maand, situatie, dagen, totalen: {}, verlof: [], rust: [], maaltijdcheques: null, codes: {} };
+  // Legende van de afwezigheidscodes rechtsonder ("U51  Wettelijk verlof")
+  const legKop = items.find((i) => /^Afwezigheidscodes$/i.test(i.str));
   for (const r of rijen) {
     const t = r.items.map((i) => i.str);
     // Dagregel: "Ma 01 07:46 07:46 …"
@@ -59,20 +63,34 @@ export function parseTimestatement(paginas) {
         if (i.str === '-') continue;
         dag[k] = ['contract', 'gepland', 'gepresteerd', 'meer'].includes(k) ? minuten(i.str) ?? i.str : i.str;
       }
-      if (afw.length) dag.afwezig = afw.join(' ');
+      if (afw.length) {
+        dag.afwezig = afw.join(' ').replace(/\s+/g, ' ');
+        // "U51 - 07:46" → code + uren
+        const codes = [...dag.afwezig.matchAll(/([A-Z0-9]{2,4})\s*-\s*(\d+:\d{2})/g)].map((m) => ({ code: m[1], min: minuten(m[2]) }));
+        if (codes.length) dag.afwCodes = codes;
+      }
       dagen.push(dag);
       continue;
     }
-    const regel = t.join(' ');
-    let m;
-    if ((m = regel.match(/^Totaal\s*[-–]\s*Uren\s+(.+)$/i))) {
-      const w = m[1].split(/\s+/).map(minuten);
-      [res.totalen.contract, res.totalen.gepland, res.totalen.gepresteerd, res.totalen.meer] = w;
-      continue;
+    if (legKop && r.y < legKop.y) {
+      const ci = r.items.findIndex((i) => i.x >= legKop.x - 80 && /^[A-Z]\d{2}$/.test(i.str));
+      if (ci >= 0) {
+        const oms = r.items.slice(ci + 1).map((i) => i.str).join(' ').trim();
+        if (oms) res.codes[r.items[ci].str] = oms;
+        r.items = r.items.slice(0, ci);
+      }
     }
-    if ((m = regel.match(/^Totaal\s*[-–]\s*Dagen\s+(.+)$/i))) {
-      const w = m[1].split(/\s+/).map(Number);
-      [res.totalen.contractDagen, res.totalen.geplandDagen, res.totalen.gepresteerdDagen] = w;
+    const regel = r.items.map((i) => i.str).join(' ');
+    let m;
+    // Totaalregels: waarden per kolom volgens hun x-positie
+    if (/^Totaal\s*[-–]\s*(Uren|Dagen)/i.test(regel)) {
+      const isUren = /Uren/i.test(regel);
+      for (const i of r.items) {
+        const w = isUren ? minuten(i.str) : /^\d+$/.test(i.str) ? +i.str : null;
+        if (w == null) continue;
+        const k = kolVan(midden(i));
+        res.totalen[isUren ? k : `${k}Dagen`] = w;
+      }
       continue;
     }
     if ((m = regel.match(/Toegekende maaltijdcheques\s+(\d+)/i))) res.maaltijdcheques = +m[1];
