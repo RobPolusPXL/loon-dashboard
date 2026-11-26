@@ -73,7 +73,7 @@ export function parseTimestatement(paginas) {
       continue;
     }
     if (legKop && r.y < legKop.y) {
-      const ci = r.items.findIndex((i) => i.x >= legKop.x - 80 && /^[A-Z]\d{2}$/.test(i.str));
+      const ci = r.items.findIndex((i) => i.x >= legKop.x - 80 && /^[A-Z][A-Z0-9]{2}$/.test(i.str));
       if (ci >= 0) {
         const oms = r.items.slice(ci + 1).map((i) => i.str).join(' ').trim();
         if (oms) res.codes[r.items[ci].str] = oms;

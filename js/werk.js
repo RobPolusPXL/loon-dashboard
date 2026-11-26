@@ -21,7 +21,10 @@ export const GROEPEN = [
   { k: 'verlof', naam: 'Verlof', re: /verlof|feestdag|vakantie/i },
   { k: 'andere', naam: 'Andere', re: /.*/ },
 ];
-export const groepVan = (code, codes) => (GROEPEN.find((g) => codes[code] && g.re.test(codes[code])) ?? GROEPEN[GROEPEN.length - 1]).k;
+// Codes waarvan de omschrijving de groep niet verraadt (UB1 = gewaarborgd maandloon bij ziekte).
+const VASTE_CODES = { UB1: 'ziekte' };
+export const groepVan = (code, codes) => VASTE_CODES[code]
+  ?? (GROEPEN.find((g) => codes[code] && g.re.test(codes[code])) ?? GROEPEN[GROEPEN.length - 1]).k;
 // Groep van een dag: de code met de meeste uren
 function dagGroep(d, codes) {
   if (!d.afwCodes?.length) return d.afwezig ? 'andere' : null;
