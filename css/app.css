@@ -257,3 +257,10 @@ details .lijst { margin-bottom: 10px; }
 .tabel td small { display: block; font-size: 11px; color: var(--mute); }
 .tabel.dagen td small { display: inline; margin-left: 4px; }
 .lijst .stip { margin-right: 8px; }
+/* Onvolledige jaren */
+.g-kol.gedimd .g-stapel { opacity: .38; }
+.g-kol.gedimd .g-top { color: var(--mute); }
+.g-brij.gedimd .g-bvul { opacity: .38; }
+.g-brij.gedimd > b { color: var(--mute); }
+.g-brij > span { white-space: nowrap; }
+.g-brij { grid-template-columns: 72px 1fr auto; }

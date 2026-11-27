@@ -188,10 +188,12 @@ function jarenScherm() {
   const jaren = jarenVan(fiches);
   const perJaar = jaren.map((j) => ({ j, l: fiches.filter((f) => +f.maand.slice(0, 4) === j) }));
   const n = (l) => new Set(l.map((f) => f.maand)).size;
-  const jl = jaren.map(String);
-  const tipExtra = perJaar.map(({ l }) => `${n(l)} ${n(l) === 1 ? 'maand' : 'maanden'} ingelezen`);
+  // Onvolledige jaren (minder dan 12 maanden) lichter, met het aantal maanden bij het jaartal
+  const gedimd = perJaar.map(({ l }) => n(l) < 12);
+  const jl = perJaar.map(({ j, l }) => (n(l) < 12 ? `${j} (${n(l)}m)` : String(j)));
+  const tipExtra = perJaar.map(({ l }) => `${n(l)} ${n(l) === 1 ? 'maand' : 'maanden'} ingelezen${n(l) < 12 ? ' (onvolledig jaar)' : ''}`);
 
-  const uitPerJaar = kolommen(jl, uitReeksen((fn) => perJaar.map(({ l }) => som(l, fn))), { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), topLabel: perJaar.map(({ l }) => eurK(som(l, uitbetaald))) });
+  const uitPerJaar = kolommen(jl, uitReeksen((fn) => perJaar.map(({ l }) => som(l, fn))), { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), gedimd, topLabel: perJaar.map(({ l }) => eurK(som(l, uitbetaald))) });
 
   // Netto loon per maand, alle maanden van de eerste tot de laatste fiche
   const eerste = fiches.reduce((a, f) => (f.maand < a ? f.maand : a), '9999');
@@ -208,7 +210,7 @@ function jarenScherm() {
   const indexLijn = lijnGrafiek(punt((f) => f.gegevens?.index ?? null, (v) => f2(v)), { fmt: (v) => f2(v), asFmt: (v) => f0(v), asLabels, hoogte: 120, nul: false });
 
   const pct = balken(perJaar.map(({ j, l }) => ({
-    label: String(j), href: `#/jaar/${j}`,
+    label: n(l) < 12 ? `${j} (${n(l)}m)` : String(j), href: `#/jaar/${j}`, gedimd: n(l) < 12,
     waarden: { netto: som(l, nettoLoon) ?? 0, rsz: -(som(l, (f) => f.totalen.sociale) ?? 0), bv: -(som(l, (f) => f.totalen.voorheffing) ?? 0), inh: -(som(l, (f) => f.totalen.inhoudingen) ?? 0) },
   })), [
     { k: 'netto', naam: 'Netto loon', kleur: KLEUR.netto }, { k: 'rsz', naam: 'RSZ', kleur: KLEUR.rsz },
@@ -216,8 +218,8 @@ function jarenScherm() {
   ], { fmt: eur0, procent: true, rechts: (r, tot) => (tot ? `${Math.round(r.waarden.netto / tot * 100)}% netto` : '') });
 
   // kort: compacte notatie boven de kolommen en op de as; fmt: volledig in de tooltip
-  const enkelL = (lfn, kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => lfn(l)) }], { fmt: kort, hoogte: 120, tipExtra, topLabel: perJaar.map(({ l }) => { const v = lfn(l); return v == null ? null : kort(v); }) });
-  const enkel = (fn, kort, fmt = kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => som(l, fn)) }], { fmt, asFmt: kort, hoogte: 120, tipExtra, topLabel: perJaar.map(({ l }) => { const v = som(l, fn); return v == null ? null : kort(v); }) });
+  const enkelL = (lfn, kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => lfn(l)) }], { fmt: kort, hoogte: 120, tipExtra, gedimd, topLabel: perJaar.map(({ l }) => { const v = lfn(l); return v == null ? null : kort(v); }) });
+  const enkel = (fn, kort, fmt = kort) => kolommen(jl, [{ naam: '', kleur: KLEUR.enkel, waarden: perJaar.map(({ l }) => som(l, fn)) }], { fmt, asFmt: kort, hoogte: 120, tipExtra, gedimd, topLabel: perJaar.map(({ l }) => { const v = som(l, fn); return v == null ? null : kort(v); }) });
 
   const totaal = som(fiches, uitbetaald);
   const volle = perJaar.filter(({ l }) => n(l) === 12);
@@ -241,7 +243,7 @@ function jarenScherm() {
         { naam: 'Netto voordeel', kleur: KLEUR.netto, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).voordeel || null)) },
         { naam: 'Eigen bijdrage', kleur: KLEUR.inh, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).eigen || null)) },
         { naam: 'Ecocheques', kleur: KLEUR.regul, waarden: perJaar.map(({ l }) => som(l, (f) => f.ecocheques || null)) },
-      ].filter((r) => r.naam !== 'Ecocheques' || r.waarden.some((v) => v)), { fmt: eur0, asFmt: eurK, hoogte: 120, tipExtra: perJaar.map(({ l }) => `${f0(som(l, cheques) ?? 0)} cheques`), topLabel: perJaar.map(({ l }) => { const v = som(l, (f) => (chequeGeld(f).voordeel || 0) + (f.ecocheques || 0) || null); return v == null ? null : eurK(v); }) }), { sub: 'boven: wat het netto opbrengt' }),
+      ].filter((r) => r.naam !== 'Ecocheques' || r.waarden.some((v) => v)), { fmt: eur0, asFmt: eurK, hoogte: 120, gedimd, tipExtra: perJaar.map(({ l }, i) => `${f0(som(l, cheques) ?? 0)} cheques · ${tipExtra[i]}`), topLabel: perJaar.map(({ l }) => { const v = som(l, (f) => (chequeGeld(f).voordeel || 0) + (f.ecocheques || 0) || null); return v == null ? null : eurK(v); }) }), { sub: 'boven: wat het netto opbrengt' }),
       kaart('Fietsvergoeding', enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)),
       kaart('Index', indexLijn),
       kaart('Overzicht', `<div class="scroll"><table class="tabel">

@@ -212,7 +212,7 @@ export function werkScherm(state) {
   const pg = perGroep(maanden, codes);
   const afwKaart = pg.length ? kaart(`Afwezigheden in ${jaar}`, `<table class="lijst">${pg.map((g) => `<tr class="sectie"><th><i class="stip" style="background:${GROEP_KLEUR[g.k]}"></i>${g.naam}</th><td>${g.dagen} ${g.dagen === 1 ? 'dag' : 'dagen'} · ${uren(g.min)}</td></tr>
         ${Object.entries(g.codes).sort((a, b) => b[1].min - a[1].min).map(([code, v]) => `<tr class="lijn"><th><span class="code">${esc(code)}</span>${esc(code === '—' ? 'Wettelijke feestdag (zonder code op de time statement)' : code.endsWith('*') ? `${codes[code.slice(0, -1)] ?? code.slice(0, -1)}, zelf aangepast` : codes[code] ?? 'geen omschrijving op de time statement')}</th><td>${v.dagen} · ${uren(v.min)}</td></tr>`).join('')}`).join('')}</table>`) : '';
-  const jarenKaart = jaren.length > 1 ? kaart('Afwezigheden per jaar', balken(jaren.map((j) => ({ label: String(j), waarden: groepDagenJaar(alles.filter((m) => +m.maand.slice(0, 4) === j), codes) })),
+  const jarenKaart = jaren.length > 1 ? kaart('Afwezigheden per jaar', balken(jaren.map((j) => { const mj = alles.filter((m) => +m.maand.slice(0, 4) === j); const k = mj.length < 12; return { label: k ? `${j} (${mj.length}m)` : String(j), gedimd: k, waarden: groepDagenJaar(mj, codes) }; }),
         groepenAlle.map((g) => ({ k: g.k, naam: g.naam, kleur: GROEP_KLEUR[g.k] })), { fmt: (v) => `${v} ${v === 1 ? 'dag' : 'dagen'}` }), { breed: true }) : '';
   const tabelKaart = kaart('Per maand', `<div class="scroll"><table class="tabel">
       <thead><tr><th>Maand</th><th>Gewerkt</th><th>Uren</th><th>Meer</th><th>Nacht</th><th>6de dag</th><th>Afwezig</th></tr></thead>

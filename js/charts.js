@@ -30,7 +30,8 @@ export function legende(items) {
 }
 
 // Gestapelde kolommen. labels: [..], reeksen: [{ naam, kleur, waarden: [..] }], opties: { fmt, hoogte, hrefs, tipExtra, kort }
-export function kolommen(labels, reeksen, { fmt = String, asFmt = fmt, hoogte = 170, hrefs = [], tipKop = labels, tipExtra = [], legendeTonen = reeksen.length > 1, topLabel = null } = {}) {
+// gedimd: [true/false] per kolom, bv. voor onvolledige jaren (lichter getekend)
+export function kolommen(labels, reeksen, { fmt = String, asFmt = fmt, hoogte = 170, hrefs = [], tipKop = labels, tipExtra = [], legendeTonen = reeksen.length > 1, topLabel = null, gedimd = [] } = {}) {
   const totalen = labels.map((_, i) => reeksen.reduce((a, r) => a + Math.max(0, r.waarden[i] ?? 0), 0));
   const t = ticks(Math.max(...totalen, 0));
   const max = t[t.length - 1] || 1;
@@ -39,7 +40,7 @@ export function kolommen(labels, reeksen, { fmt = String, asFmt = fmt, hoogte = 
     const tip = [tipKop[i], ...reeksen.filter((r) => (r.waarden[i] ?? 0) !== 0).map((r) => `${r.naam}: ${fmt(r.waarden[i])}`),
       ...(reeksen.length > 1 && totalen[i] ? [`Totaal: ${fmt(totalen[i])}`] : []), ...(tipExtra[i] ? [tipExtra[i]] : [])].join('\n');
     const h = (totalen[i] / max) * 100;
-    return `<div class="g-kol${hrefs[i] ? ' klik' : ''}"${hrefs[i] ? ` data-href="${esc(hrefs[i])}"` : ''} data-tip="${esc(totalen[i] ? tip : `${tipKop[i]}: geen gegevens`)}" tabindex="0">
+    return `<div class="g-kol${hrefs[i] ? ' klik' : ''}${gedimd[i] ? ' gedimd' : ''}"${hrefs[i] ? ` data-href="${esc(hrefs[i])}"` : ''} data-tip="${esc(totalen[i] ? tip : `${tipKop[i]}: geen gegevens`)}" tabindex="0">
       <div class="g-stapel" style="height:${h.toFixed(2)}%">${[...segs].reverse().map((s) => `<i style="flex:${s.v};background:${s.r.kleur}"></i>`).join('')}</div>
       ${topLabel && topLabel[i] != null ? `<b class="g-top" style="bottom:${h.toFixed(2)}%">${esc(topLabel[i])}</b>` : ''}
     </div>`;
@@ -100,7 +101,7 @@ export function balken(rijen, reeksen, { fmt = String, procent = false, rechts =
       const tot = totaal(r);
       const tip = [r.label, ...reeksen.filter((s) => r.waarden[s.k]).map((s) => `${s.naam}: ${fmt(r.waarden[s.k])}${procent && tot ? ` (${Math.round(r.waarden[s.k] / tot * 100)}%)` : ''}`)].join('\n');
       const breedte = procent ? 100 : (tot / max) * 100;
-      return `<div class="g-brij${r.href ? ' klik' : ''}"${r.href ? ` data-href="${esc(r.href)}"` : ''} data-tip="${esc(tip)}">
+      return `<div class="g-brij${r.href ? ' klik' : ''}${r.gedimd ? ' gedimd' : ''}"${r.href ? ` data-href="${esc(r.href)}"` : ''} data-tip="${esc(tip)}">
         <span>${esc(r.label)}</span>
         <div class="g-bbak"><div class="g-bvul" style="width:${breedte.toFixed(2)}%">${reeksen.map((s) => { const v = Math.max(0, r.waarden[s.k] ?? 0); return v ? `<i style="flex:${v};background:${s.kleur}"></i>` : ''; }).join('')}</div></div>
         <b>${esc(rechts ? rechts(r, tot) : fmt(tot))}</b></div>`;
