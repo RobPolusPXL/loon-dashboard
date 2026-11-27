@@ -1,5 +1,5 @@
 // App-bestanden cachen zodat de app snel opent en offline start. Data komt uit Firestore (eigen offline cache).
-const CACHE = 'loon-v29';
+const CACHE = 'loon-v30';
 const BESTANDEN = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/store.js', 'js/loonfiche.js', 'js/timestatement.js', 'js/werk.js', 'js/charts.js', 'js/ui.js', 'firebase-config.js', 'manifest.webmanifest', 'icons/icon.svg'];
 
 self.addEventListener('install', (e) => {

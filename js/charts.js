@@ -25,13 +25,18 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 // Mooie asverdeling: 0 tot max in 3–5 stappen
 export function ticks(max, n = 4) {
   if (!(max > 0)) return [0, 1];
-  const ruw = max / n;
-  const mag = 10 ** Math.floor(Math.log10(ruw));
-  const stap = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => s >= ruw);
-  const t = [];
-  for (let v = 0; v <= max + stap * 0.001; v += stap) t.push(Math.round(v * 1000) / 1000);
-  if (t[t.length - 1] < max) t.push(Math.round((t[t.length - 1] + stap) * 1000) / 1000);
-  return t;
+  // Kies de stap die het minst lege ruimte boven de hoogste waarde laat, met 3 tot 6 stappen
+  const mag = 10 ** Math.floor(Math.log10(max / n));
+  let best = null;
+  for (const f of [1, 2, 2.5, 5, 10, 20]) {
+    const stap = f * mag;
+    const top = Math.ceil(max / stap - 1e-9) * stap;
+    const aantal = Math.round(top / stap);
+    if (aantal < 3 || aantal > 6) continue;
+    if (!best || top < best.top || (top === best.top && aantal < best.aantal)) best = { stap, top, aantal };
+  }
+  if (!best) { const stap = 10 ** Math.ceil(Math.log10(max / n)); best = { stap, aantal: Math.ceil(max / stap) }; }
+  return Array.from({ length: best.aantal + 1 }, (_, k) => Math.round(k * best.stap * 1000) / 1000);
 }
 
 export function legende(items) {
