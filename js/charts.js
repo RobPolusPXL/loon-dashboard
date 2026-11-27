@@ -11,6 +11,7 @@ export const KLEUR = {
   bv: '#a855f7', // paars: bedrijfsvoorheffing
   inh: '#7A828F', eigen: '#7A828F', // grijs: inhoudingen en eigen bijdrage maaltijdcheques (die er deel van is)
   andere: '#84cc16', // limoen: andere vergoedingen (enkel 2020)
+  rva: '#e5e7eb', // gebroken wit: RVA-uitkering
   enkel: '#338ced', // één reeks
   // Werk: gewerkt neutraal, meerprestaties groen (oranje is "overig" bij de afwezigheden)
   werk: '#7A828F', meer: '#0aac23',

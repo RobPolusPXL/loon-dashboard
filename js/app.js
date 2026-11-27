@@ -104,12 +104,13 @@ const andereVerg = (f) => Math.round((verg(f) - fiets(f)) * 100) / 100;
 // Reeksen voor "uitbetaald": andere vergoedingen alleen als ze voorkomen
 // Stapelvolgorde (onder → boven) is zo gekozen dat aangrenzende kleuren ook voor kleurenblinden te onderscheiden zijn.
 const chequeVoordeel = (f) => (chequeGeld(f).voordeel || 0) + (f.ecocheques || 0);
-const uitReeksen = (waarde) => [
+const uitReeksen = (waarde, rva = null) => [
   { naam: 'Andere vergoedingen', kleur: KLEUR.andere, waarden: waarde(andereVerg) },
   { naam: 'Netto loon', kleur: KLEUR.netto, waarden: waarde(nettoLoon) },
   { naam: 'Fietsvergoeding', kleur: KLEUR.verg, waarden: waarde(fiets) },
   { naam: 'Regularisatie', kleur: KLEUR.regul, waarden: waarde(regul) },
   { naam: 'Maaltijd- en ecocheques', kleur: KLEUR.cheques, waarden: waarde(chequeVoordeel) },
+  ...(rva ? [{ naam: 'RVA-uitkering', kleur: KLEUR.rva, waarden: rva }] : []),
 ].filter((r) => r.naam === 'Netto loon' || r.waarden.some((v) => v && Math.abs(v) >= 0.01));
 const ingehouden = (f) => -((f.totalen.sociale ?? 0) + (f.totalen.voorheffing ?? 0) + (f.totalen.inhoudingen ?? 0));
 const eurK = (v) => { if (Math.abs(v) < 1000) return `€ ${f0(v)}`; const k = v / 1000; return `€ ${Math.abs(k) >= 10 || Number.isInteger(k) ? f0(k) : nf(1).format(k)}K`; };
@@ -130,7 +131,8 @@ function jaarScherm() {
 
   const perMaand = Array.from({ length: 12 }, (_, i) => maandFiches(lijst, i + 1));
   const reeks = (fn) => perMaand.map((l) => (l.length ? som(l, fn) : null));
-  const grafiek = kolommen(MND, uitReeksen(reeks), { fmt: eur, asFmt: eurK, hrefs: perMaand.map((l) => (l.length ? `#/fiche/${l[0].id}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) });
+  const rvaMaand = MND.map((_, i) => rvaVoor(`${jaar}-${String(i + 1).padStart(2, '0')}`));
+  const grafiek = kolommen(MND, uitReeksen(reeks, rvaMaand.some((v) => v) ? rvaMaand : null), { fmt: eur, asFmt: eurK, hrefs: perMaand.map((l) => (l.length ? `#/fiche/${l[0].id}` : null)), tipKop: MAAND_VOL.map((m) => `${m} ${jaar}`) });
 
   const verdeel = verdeelbalk([
     { naam: 'Netto loon', v: som(lijst, nettoLoon) ?? 0, kleur: KLEUR.netto },
@@ -157,31 +159,55 @@ function jaarScherm() {
       { label: 'Gewerkt', waarde: `${getal(somDagen(lijst))}<small>dagen</small>`, detail: `${getal(som(lijst, cheques))} maaltijdcheques`, href: '#/werk' },
     ])}
     ${raster(
-      kaart('Uitbetaald en cheques per maand', grafiek + (ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''), { breed: true, sub: 'klik op een maand voor de fiche' }),
+      kaart(rvaMaand.some((v) => v) ? 'Uitbetaald, cheques en RVA per maand' : 'Uitbetaald en cheques per maand', grafiek + (ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''), { breed: true, sub: 'klik op een maand voor de fiche' }),
+      vergelijkKaart(jaar, lijst),
       kaart('Waar gaat je bruto naartoe', `<div class="groot">${eur0(som(lijst, brutoTot))}<small>bruto</small></div>${verdeel}`),
       kaart('Vergoedingen', `<div class="groot">${eur0(som(lijst, verg))}</div>
         <table class="lijst">${Object.entries(lijst.flatMap((f) => (f.secties.find((x) => x.sleutel === 'vergoedingen')?.lijnen || [])).reduce((a, l) => { a[l.omschrijving] = (a[l.omschrijving] ?? 0) + l.bedrag; return a; }, {}))
           .sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${eur0(v)}</td></tr>`).join('')}
           ${som(lijst, regul) ? `<tr><th>Regularisaties</th><td>${eur0(som(lijst, regul))}</td></tr>` : ''}</table>`),
       chequeKaart(lijst),
-      rvaKaart(jaar, lijst),
       kaart('Per maand', tabel, { breed: true }),
     )}`;
 }
 
-function rvaKaart(jaar, lijst) {
-  const rijen = Array.from({ length: 12 }, (_, i) => `${jaar}-${String(i + 1).padStart(2, '0')}`)
-    .map((ym) => ({ ym, rva: rvaVoor(ym), l: lijst.filter((f) => f.maand === ym) }))
-    .filter((r) => r.rva != null);
-  if (!rijen.length) return '';
-  const totRva = rijen.reduce((a, r) => a + r.rva, 0);
-  const netto = (r) => (r.l.length ? som(r.l, uitbetaald) : null);
-  return kaart('Netto loon + RVA-uitkering', `<div class="groot">${eur0(totRva)}<small>van de RVA in ${jaar}</small></div>
-    <div class="scroll"><table class="tabel">
-      <thead><tr><th>Maand</th><th>Uitbetaald door bpost</th><th>RVA</th><th>Samen</th></tr></thead>
-      <tbody>${rijen.map((r) => `<tr><th>${maandKort(r.ym)}</th><td>${netto(r) == null ? '—' : eur(netto(r))}</td><td>${eur(r.rva)}</td><td><b>${netto(r) == null ? '—' : eur(netto(r) + r.rva)}</b></td></tr>`).join('')}</tbody>
-    </table></div>
-    <p class="noot">Per maand van storting door de RVA. Niet opgenomen in de grafieken hierboven, die tonen alleen wat bpost betaalt. Bedragen aanpassen kan bij Gegevens.</p>`, { breed: true });
+// ---------- 4/5 tegenover voltijds ----------
+// Een maand telt als 4/5 als er loopbaanonderbreking op de fiche of de time statement staat.
+function is45(f) {
+  if ((loopbaanDagen(f) ?? 0) > 0) return true;
+  const w = state.werk?.find((x) => x.maand === f.maand);
+  return !!w?.dagen.some((d) => (d.afwCodes || []).some((c) => /loopbaan/i.test(w.codes?.[c.code] ?? '')));
+}
+// Wat een maand oplevert zonder regularisaties (die horen bij andere maanden): netto + vergoedingen + cheques
+const inkomen = (f) => (f.totalen.netto ?? 0) + chequeVoordeel(f);
+const mediaan = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : null; };
+
+function vergelijkKaart(jaar, lijst) {
+  const nu = lijst.filter(is45).sort((a, b) => a.maand.localeCompare(b.maand));
+  if (!nu.length) return '';
+  const alle = [...state.fiches].sort((a, b) => a.maand.localeCompare(b.maand));
+  const eerste45 = alle.find(is45);
+  const ref = alle.filter((f) => f.maand < eerste45.maand && !is45(f) && f.gegevens?.index).slice(-12);
+  if (ref.length < 6) return '';
+  const indexNu = [...nu].reverse().find((f) => f.gegevens?.index)?.gegevens.index;
+  if (!indexNu) return '';
+  const voltijds = mediaan(ref.map((f) => inkomen(f) * (indexNu / f.gegevens.index)));
+  const bpost = mediaan(nu.map(inkomen));
+  const rvaMaanden = nu.map((f) => rvaVoor(f.maand) ?? 0);
+  const rva = rvaMaanden.reduce((a, b) => a + b, 0) / rvaMaanden.length;
+  const samen = bpost + rva;
+  const verschil = voltijds - samen;
+  const minder = verschil >= 0;
+  return kaart('4/5 tegenover voltijds', `<div class="groot">${eur0(Math.abs(verschil))}<small>per maand ${minder ? 'minder' : 'meer'} dan voltijds</small></div>
+    ${verdeelbalk([{ naam: 'bpost (4/5)', v: bpost, kleur: KLEUR.netto }, { naam: 'RVA', v: rva, kleur: KLEUR.rva }, { naam: 'Verschil met voltijds', v: Math.max(0, verschil), kleur: KLEUR.eigen }], { fmt: eur0 })}
+    <table class="lijst">
+      <tr><th>Voltijds (geschat, aan de index van nu)</th><td>${eur(voltijds)}</td></tr>
+      <tr><th>Nu van bpost (4/5)</th><td>${eur(bpost)}</td></tr>
+      <tr><th>Nu van de RVA (gemiddeld)</th><td>${eur(rva)}</td></tr>
+      <tr class="totaal"><th>Verschil per maand</th><td>${minder ? '−' : '+'} ${eur(Math.abs(verschil))}</td></tr>
+      <tr><th>Op jaarbasis (× 12)</th><td>${minder ? '−' : '+'} ${eur0(Math.abs(verschil) * 12)}</td></tr>
+    </table>
+    <p class="noot">Schatting. Per maand: netto (incl. fietsvergoeding) + wat de cheques opbrengen, zonder regularisaties. Voltijds = mediaan van je laatste ${ref.length} voltijdse maanden (${maandKort(ref[0].maand)} – ${maandKort(ref[ref.length - 1].maand)}), omgerekend van hun index naar ${f2(indexNu)}. 4/5 = mediaan van ${nu.length} maanden in ${jaar}. De mediaan laat vakantiegeld en eindejaarspremie buiten beschouwing; daar verlies je in 4/5 ook nog een deel van.</p>`);
 }
 
 function chequeKaart(lijst) {
@@ -220,7 +246,8 @@ function jarenScherm() {
   const jl = perJaar.map(({ j, l }) => (n(l) < 12 ? `${j} (${n(l)}m)` : String(j)));
   const tipExtra = perJaar.map(({ l }) => `${n(l)} ${n(l) === 1 ? 'maand' : 'maanden'} ingelezen${n(l) < 12 ? ' (onvolledig jaar)' : ''}`);
 
-  const uitPerJaar = kolommen(jl, uitReeksen((fn) => perJaar.map(({ l }) => som(l, fn))), { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), gedimd, topLabel: perJaar.map(({ l }) => eurK((som(l, uitbetaald) ?? 0) + (som(l, chequeVoordeel) ?? 0))) });
+  const rvaJaar = jaren.map((j) => Array.from({ length: 12 }, (_, i) => rvaVoor(`${j}-${String(i + 1).padStart(2, '0')}`) ?? 0).reduce((a, b) => a + b, 0) || null);
+  const uitPerJaar = kolommen(jl, uitReeksen((fn) => perJaar.map(({ l }) => som(l, fn)), rvaJaar.some((v) => v) ? rvaJaar : null), { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), gedimd, topLabel: perJaar.map(({ l }, i) => eurK((som(l, uitbetaald) ?? 0) + (som(l, chequeVoordeel) ?? 0) + (rvaJaar[i] ?? 0))) });
 
   // Netto loon per maand, alle maanden van de eerste tot de laatste fiche
   const eerste = fiches.reduce((a, f) => (f.maand < a ? f.maand : a), '9999');
@@ -262,7 +289,7 @@ function jarenScherm() {
       laatsteIndex ? { label: 'Index', waarde: f2(laatsteIndex.gegevens.index), detail: eersteIndex && eersteIndex !== laatsteIndex ? `was ${f2(eersteIndex.gegevens.index)} in ${eersteIndex.maand.slice(0, 4)}` : '' } : null,
     ])}
     ${raster(
-      kaart('Uitbetaald en cheques per jaar', uitPerJaar, { breed: true, sub: 'klik op een jaar' }),
+      kaart(rvaJaar.some((v) => v) ? 'Uitbetaald, cheques en RVA per jaar' : 'Uitbetaald en cheques per jaar', uitPerJaar, { breed: true, sub: 'klik op een jaar' }),
       kaart('Netto loon per maand', nettoLijn + '<p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt voor die fiche.</p>', { breed: true }),
       kaart('Van bruto naar netto', pct, { breed: true }),
       kaart('Gewerkte dagen', enkelL(somDagen, (v) => f0(v))),
