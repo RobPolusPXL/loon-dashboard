@@ -3,9 +3,10 @@
 
 export const KLEUR = {
   // Loon en Jaren: elke betekenis een eigen kleur
-  netto: '#338ced', rsz: '#e76624', bv: '#00a888', inh: '#d28e05', // bruto → netto
-  verg: '#0aac23', andere: '#eb6263', regul: '#9887ef', cheques: '#e24d8b', // fietsvergoeding, andere vergoedingen, regularisatie, maaltijd- en ecocheques
-  eigen: '#7A828F', // eigen bijdrage maaltijdcheques (neutraal: een kost)
+  netto: '#338ced', rsz: '#e76624', bv: '#00a888', inh: '#7A828F', // bruto → netto (inhoudingen neutraal grijs)
+  verg: '#d28e05', andere: '#eb6263', regul: '#9887ef', cheques: '#e24d8b', // fietsvergoeding (geel), andere vergoedingen, regularisatie, maaltijd- en ecocheques
+  eigen: '#7A828F', // eigen bijdrage maaltijdcheques = een van je inhoudingen, dus hetzelfde grijs
+  // groen en turquoise niet samen gebruiken: te gelijkend (validator: ΔE 11,6)
   enkel: '#338ced', // één reeks
   // Werk: gewerkt neutraal, meerprestaties groen (oranje is "overig" bij de afwezigheden)
   werk: '#7A828F', meer: '#0aac23',
