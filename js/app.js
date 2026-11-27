@@ -555,7 +555,11 @@ function toonTip(e) {
   if (!el) { tip.hidden = true; return; }
   tip.textContent = el.dataset.tip;
   tip.hidden = false;
-  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  // Eerst linksboven zetten: anders meet de breedte de restruimte tot de rechterrand en breekt de tekst per woord
+  tip.style.left = '0px'; tip.style.top = '0px';
+  const w = tip.offsetWidth;
+  // Past hij niet meer rechts van de cursor, dan links ervan tonen
+  const x = e.clientX + 14 + w + 8 > innerWidth ? e.clientX - 14 - w : e.clientX + 14;
   const y = e.clientY - tip.offsetHeight - 14;
   tip.style.left = Math.max(8, x) + 'px';
   tip.style.top = (y < 8 ? e.clientY + 18 : y) + 'px';

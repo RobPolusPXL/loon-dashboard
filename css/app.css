@@ -234,7 +234,7 @@ details .lijst { margin-bottom: 10px; }
 .chips span { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
 .chips i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .tip { position: fixed; z-index: 20; pointer-events: none; background: #1C2129; border: 1px solid #2E3440; color: var(--tekst); font-size: 12px; padding: 7px 10px; border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0,0,0,.45); white-space: pre-line; line-height: 1.5; font-variant-numeric: tabular-nums; max-width: 260px; }
+  box-shadow: 0 6px 20px rgba(0,0,0,.45); white-space: pre-line; line-height: 1.5; font-variant-numeric: tabular-nums; width: max-content; max-width: min(300px, calc(100vw - 16px)); }
 .wd i { background: #338ced; }
 .g-vlak.met-top { margin-top: 22px; }
 .correctie { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 8px; }
