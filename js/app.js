@@ -70,6 +70,14 @@ function chequeGeld(f) {
   return { n, waarde: bruto, eigen: Math.round(eigen * 100) / 100, voordeel: Math.round((bruto - eigen) * 100) / 100, aangenomen };
 }
 
+// RVA-uitkering per maand van storting. Bij overlap geldt de laatst toegevoegde periode. tot leeg = tot nu.
+function rvaVoor(ym) {
+  const nu = new Date().toISOString().slice(0, 7);
+  let v = null;
+  for (const p of state.rva || []) if (ym >= p.van && ym <= (p.tot || nu)) v = p.bedrag;
+  return v;
+}
+
 // Som over een lijst fiches, elke maand maar één keer (twee fiches in één maand = één keer dagen)
 const somDagen = (lijst) => som([...new Map(lijst.map((f) => [f.maand, f])).values()], gewerkteDagen);
 const gewerkteUren = (f) => prestatie(f, 'uren', /^Gewerkte uren/i);
@@ -156,8 +164,24 @@ function jaarScherm() {
           .sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${eur0(v)}</td></tr>`).join('')}
           ${som(lijst, regul) ? `<tr><th>Regularisaties</th><td>${eur0(som(lijst, regul))}</td></tr>` : ''}</table>`),
       chequeKaart(lijst),
+      rvaKaart(jaar, lijst),
       kaart('Per maand', tabel, { breed: true }),
     )}`;
+}
+
+function rvaKaart(jaar, lijst) {
+  const rijen = Array.from({ length: 12 }, (_, i) => `${jaar}-${String(i + 1).padStart(2, '0')}`)
+    .map((ym) => ({ ym, rva: rvaVoor(ym), l: lijst.filter((f) => f.maand === ym) }))
+    .filter((r) => r.rva != null);
+  if (!rijen.length) return '';
+  const totRva = rijen.reduce((a, r) => a + r.rva, 0);
+  const netto = (r) => (r.l.length ? som(r.l, uitbetaald) : null);
+  return kaart('Netto loon + RVA-uitkering', `<div class="groot">${eur0(totRva)}<small>van de RVA in ${jaar}</small></div>
+    <div class="scroll"><table class="tabel">
+      <thead><tr><th>Maand</th><th>Uitbetaald door bpost</th><th>RVA</th><th>Samen</th></tr></thead>
+      <tbody>${rijen.map((r) => `<tr><th>${maandKort(r.ym)}</th><td>${netto(r) == null ? '—' : eur(netto(r))}</td><td>${eur(r.rva)}</td><td><b>${netto(r) == null ? '—' : eur(netto(r) + r.rva)}</b></td></tr>`).join('')}</tbody>
+    </table></div>
+    <p class="noot">Per maand van storting door de RVA. Niet opgenomen in de grafieken hierboven, die tonen alleen wat bpost betaalt. Bedragen aanpassen kan bij Gegevens.</p>`, { breed: true });
 }
 
 function chequeKaart(lijst) {
@@ -324,6 +348,14 @@ function gegevensScherm() {
         Rijksregisternummer, IBAN, stamnummer en adres worden overgeslagen. Een bestand dat je opnieuw inleest, overschrijft de vorige versie.</p>
         <label class="knop primair">PDF's kiezen<input id="bestanden" type="file" accept="application/pdf,.pdf,.jpg,.jpeg,image/jpeg" multiple hidden></label>
         ${lijstImport}${state.melding ? `<p class="melding">${esc(state.melding)}</p>` : ''}`, { breed: true }),
+      kaart('RVA-uitkering', `<p class="uitleg">Het bedrag dat de RVA je per maand stort voor je loopbaanonderbreking. Alleen ingeven als het verandert; een maand met een afwijkend bedrag geef je in als periode van één maand.</p>
+        ${(state.rva || []).length ? `<ul class="import">${state.rva.map((p, i) => `<li><span>${maandKort(p.van)}${p.tot !== p.van ? ` – ${p.tot ? maandKort(p.tot) : 'nu'}` : ''}</span><span>${eur(p.bedrag)} per maand</span><button type="button" class="link" data-wisrva="${i}">verwijderen</button></li>`).join('')}</ul>` : ''}
+        <form id="rva" class="correctie">
+          <label>Vanaf <input type="month" name="van" required></label>
+          <label>Tot en met <input type="month" name="tot"></label>
+          <label>Per maand (€) <input type="number" name="bedrag" step="0.01" min="0" required></label>
+          <button type="submit" class="knop">Toevoegen</button>
+        </form>`, { breed: true }),
       kaart('Exporteren', `<p class="uitleg">Alle fiches als CSV, één regel per fiche.</p>
         <button type="button" class="knop" id="export"${state.fiches.length ? '' : ' disabled'}>CSV downloaden</button>`),
       kaart('Account', `<p class="uitleg">Je gegevens staan in je eigen Firebase-database, alleen zichtbaar voor jou.</p>
@@ -363,7 +395,7 @@ function render() {
 }
 
 async function laad() {
-  try { [state.fiches, state.werk, state.correcties] = await Promise.all([store.laad(state.user), store.laad(state.user, 'werk'), store.laadCorrecties(state.user)]); state.fout = null; }
+  try { [state.fiches, state.werk, state.correcties, state.rva] = await Promise.all([store.laad(state.user), store.laad(state.user, 'werk'), store.laadCorrecties(state.user), store.laadRva(state.user)]); state.fout = null; }
   catch (e) { state.fout = 'Gegevens laden mislukt: ' + e.message; }
   render();
 }
@@ -409,6 +441,11 @@ document.addEventListener('click', async (e) => {
     state.bezig = false; render();
   } else if (t.dataset.wis) { state.wis = t.dataset.wis; render(); }
   else if (t.hasAttribute('data-wis-nee')) { state.wis = null; state.wisWerk = null; render(); }
+  else if (t.dataset.wisrva != null) {
+    const lijst = (state.rva || []).filter((_, i) => i !== +t.dataset.wisrva);
+    try { await store.bewaarRva(state.user, lijst); state.rva = lijst; render(); }
+    catch (err) { state.fout = 'Verwijderen mislukt: ' + err.message; render(); }
+  }
   else if (t.dataset.wiscorr) {
     const [van, tot] = t.dataset.wiscorr.split('|');
     const lijst = (state.correcties || []).filter((c) => !(c.van === van && c.tot === tot));
@@ -427,6 +464,14 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('submit', async (e) => {
+  if (e.target.id === 'rva') {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(e.target).entries());
+    const lijst = [...(state.rva || []), { van: fd.van, tot: fd.tot || '', bedrag: Math.round(parseFloat(fd.bedrag) * 100) / 100 }];
+    try { await store.bewaarRva(state.user, lijst); state.rva = lijst; render(); }
+    catch (err) { state.fout = 'Opslaan mislukt: ' + err.message; render(); }
+    return;
+  }
   if (e.target.id !== 'correctie') return;
   e.preventDefault();
   const fd = Object.fromEntries(new FormData(e.target).entries());

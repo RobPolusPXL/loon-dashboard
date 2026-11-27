@@ -47,13 +47,13 @@ export async function logout() { if (fb) await fb.a.signOut(fb.auth); }
 // in dezelfde maand (ander bedrag) komt ernaast.
 export const ficheId = (f) => `${f.maand}_${Math.round((f.totalen.totaal ?? f.totalen.netto) * 100)}`;
 
+let demoBelofte = null;
+const demoLaden = () => (demoBelofte ||= fetch('demo-data.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then((d) => { demo = d; }));
+
 // col = 'loonfiches' of 'werk'
 export async function laad(user, col = 'loonfiches') {
   if (user.demo) {
-    if (!demo) {
-      const r = await fetch('demo-data.json', { cache: 'no-store' });
-      demo = r.ok ? await r.json() : {};
-    }
+    await demoLaden();
     demo[col] ||= {};
     return Object.entries(demo[col]).map(([id, d]) => ({ id, ...d }));
   }
@@ -78,7 +78,7 @@ export async function bewaar(user, items) {
 
 // Eigen correcties (afwezigheden die je zelf anders indeelt): users/{uid}/instellingen/correcties = { lijst: [{ van, tot, groep }] }
 export async function laadCorrecties(user) {
-  if (user.demo) return demo?.correcties ?? [];
+  if (user.demo) { await demoLaden(); return demo.correcties ?? []; }
   const { db, f } = fb;
   const snap = await f.getDoc(f.doc(db, 'users', user.uid, 'instellingen', 'correcties'));
   return snap.exists() ? snap.data().lijst || [] : [];
@@ -87,6 +87,19 @@ export async function bewaarCorrecties(user, lijst) {
   if (user.demo) { demo.correcties = lijst; return; }
   const { db, f } = fb;
   await f.setDoc(f.doc(db, 'users', user.uid, 'instellingen', 'correcties'), { lijst });
+}
+
+// RVA-uitkering (loopbaanonderbreking): users/{uid}/instellingen/rva = { perioden: [{ van: 'YYYY-MM', tot: 'YYYY-MM' | '', bedrag }] }
+export async function laadRva(user) {
+  if (user.demo) { await demoLaden(); return demo.rva ?? []; }
+  const { db, f } = fb;
+  const snap = await f.getDoc(f.doc(db, 'users', user.uid, 'instellingen', 'rva'));
+  return snap.exists() ? snap.data().perioden || [] : [];
+}
+export async function bewaarRva(user, perioden) {
+  if (user.demo) { demo.rva = perioden; return; }
+  const { db, f } = fb;
+  await f.setDoc(f.doc(db, 'users', user.uid, 'instellingen', 'rva'), { perioden });
 }
 
 export async function verwijder(user, id, col = 'loonfiches') {
