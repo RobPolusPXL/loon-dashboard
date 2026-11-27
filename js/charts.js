@@ -2,10 +2,13 @@
 // Kleuren: gevalideerd voor kleurenblindheid op de donkere achtergrond (dataviz-validator).
 
 export const KLEUR = {
-  netto: '#338ced', rsz: '#e76624', bv: '#00a888', inh: '#d28e05', // waar gaat je bruto naartoe
-  verg: '#00a888', andere: '#d28e05', regul: '#9887ef', // samenstelling uitbetaald (netto blauw); gevalideerd in die volgorde
+  // Loon en Jaren: elke betekenis een eigen kleur
+  netto: '#338ced', rsz: '#e76624', bv: '#00a888', inh: '#d28e05', // bruto → netto
+  verg: '#0aac23', andere: '#eb6263', regul: '#9887ef', cheques: '#e24d8b', // fietsvergoeding, andere vergoedingen, regularisatie, maaltijd- en ecocheques
+  eigen: '#7A828F', // eigen bijdrage maaltijdcheques (neutraal: een kost)
   enkel: '#338ced', // één reeks
-  werk: '#5B6472', meer: '#e76624',
+  // Werk: gewerkt neutraal, meerprestaties groen (oranje is "overig" bij de afwezigheden)
+  werk: '#7A828F', meer: '#0aac23',
 };
 // Afwezigheden: stapelvolgorde = validatievolgorde
 export const GROEP_KLEUR = { loopbaan: '#338ced', andere: '#e76624', ziekte: '#00a888', verlof: '#d28e05', feestdag: '#e24d8b', rust: '#9887ef', ongeval: '#eb6263' };

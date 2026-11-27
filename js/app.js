@@ -94,11 +94,14 @@ const regul = (f) => f.totalen.regularisatie ?? 0;
 const fiets = (f) => (f.secties.find((x) => x.sleutel === 'vergoedingen')?.lijnen || []).filter((l) => /Fietsvergoeding/i.test(l.omschrijving)).reduce((a, l) => a + l.bedrag, 0);
 const andereVerg = (f) => Math.round((verg(f) - fiets(f)) * 100) / 100;
 // Reeksen voor "uitbetaald": andere vergoedingen alleen als ze voorkomen
+// Stapelvolgorde (onder → boven) is zo gekozen dat aangrenzende kleuren ook voor kleurenblinden te onderscheiden zijn.
+const chequeVoordeel = (f) => (chequeGeld(f).voordeel || 0) + (f.ecocheques || 0);
 const uitReeksen = (waarde) => [
+  { naam: 'Andere vergoedingen', kleur: KLEUR.andere, waarden: waarde(andereVerg) },
   { naam: 'Netto loon', kleur: KLEUR.netto, waarden: waarde(nettoLoon) },
   { naam: 'Fietsvergoeding', kleur: KLEUR.verg, waarden: waarde(fiets) },
-  { naam: 'Andere vergoedingen', kleur: KLEUR.andere, waarden: waarde(andereVerg) },
   { naam: 'Regularisatie', kleur: KLEUR.regul, waarden: waarde(regul) },
+  { naam: 'Maaltijd- en ecocheques', kleur: KLEUR.cheques, waarden: waarde(chequeVoordeel) },
 ].filter((r) => r.naam === 'Netto loon' || r.waarden.some((v) => v && Math.abs(v) >= 0.01));
 const ingehouden = (f) => -((f.totalen.sociale ?? 0) + (f.totalen.voorheffing ?? 0) + (f.totalen.inhoudingen ?? 0));
 const eurK = (v) => { if (Math.abs(v) < 1000) return `€ ${f0(v)}`; const k = v / 1000; return `€ ${Math.abs(k) >= 10 || Number.isInteger(k) ? f0(k) : nf(1).format(k)}K`; };
@@ -142,11 +145,11 @@ function jaarScherm() {
     ${tegels([
       { label: 'Uitbetaald', waarde: eur0(uit), detail: `gemiddeld ${eur0(uit / nMaanden)} per maand`, kleur: KLEUR.netto, hoofd: true },
       { label: 'Bruto', waarde: eur0(som(lijst, brutoTot)), detail: nettoPct != null ? `${nettoPct}% blijft netto over` : '' },
-      { label: 'Ingehouden', waarde: eur0(som(lijst, ingehouden)), detail: 'RSZ, voorheffing en inhoudingen', kleur: KLEUR.rsz },
+      { label: 'Ingehouden', waarde: eur0(som(lijst, ingehouden)), detail: 'RSZ, voorheffing en inhoudingen' },
       { label: 'Gewerkt', waarde: `${getal(somDagen(lijst))}<small>dagen</small>`, detail: `${getal(som(lijst, cheques))} maaltijdcheques`, href: '#/werk' },
     ])}
     ${raster(
-      kaart('Uitbetaald per maand', grafiek + (ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''), { breed: true, sub: 'klik op een maand voor de fiche' }),
+      kaart('Uitbetaald en cheques per maand', grafiek + (ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''), { breed: true, sub: 'klik op een maand voor de fiche' }),
       kaart('Waar gaat je bruto naartoe', `<div class="groot">${eur0(som(lijst, brutoTot))}<small>bruto</small></div>${verdeel}`),
       kaart('Vergoedingen', `<div class="groot">${eur0(som(lijst, verg))}</div>
         <table class="lijst">${Object.entries(lijst.flatMap((f) => (f.secties.find((x) => x.sleutel === 'vergoedingen')?.lijnen || [])).reduce((a, l) => { a[l.omschrijving] = (a[l.omschrijving] ?? 0) + l.bedrag; return a; }, {}))
@@ -164,7 +167,7 @@ function chequeKaart(lijst) {
   const tot = (k) => g.reduce((a, x) => a + x[k], 0);
   const aangenomen = g.some((x) => x.aangenomen);
   return kaart(eco.length ? 'Maaltijd- en ecocheques' : 'Maaltijdcheques', `<div class="groot">${eur0(tot('voordeel') + eco.reduce((a, f) => a + f.ecocheques, 0))}<small>extra opbrengst${eco.length ? ', ecocheques inbegrepen' : ''}</small></div>
-    ${verdeelbalk([{ naam: 'Netto voordeel', v: tot('voordeel'), kleur: KLEUR.netto }, { naam: 'Eigen bijdrage', v: tot('eigen'), kleur: KLEUR.inh }], { fmt: eur })}
+    ${verdeelbalk([{ naam: 'Netto voordeel', v: tot('voordeel'), kleur: KLEUR.cheques }, { naam: 'Eigen bijdrage', v: tot('eigen'), kleur: KLEUR.eigen }], { fmt: eur })}
     <div class="scroll"><table class="tabel">
       <thead><tr><th>Maand</th><th>Cheques</th><th>Per cheque</th><th>Op je kaart</th><th>Eigen bijdrage</th><th>Voordeel</th></tr></thead>
       <tbody>${lijst.map((f) => ({ f, c: chequeGeld(f) })).filter((x) => x.c.n).map(({ f, c }) => `<tr data-href="#/fiche/${esc(f.id)}">
@@ -193,7 +196,7 @@ function jarenScherm() {
   const jl = perJaar.map(({ j, l }) => (n(l) < 12 ? `${j} (${n(l)}m)` : String(j)));
   const tipExtra = perJaar.map(({ l }) => `${n(l)} ${n(l) === 1 ? 'maand' : 'maanden'} ingelezen${n(l) < 12 ? ' (onvolledig jaar)' : ''}`);
 
-  const uitPerJaar = kolommen(jl, uitReeksen((fn) => perJaar.map(({ l }) => som(l, fn))), { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), gedimd, topLabel: perJaar.map(({ l }) => eurK(som(l, uitbetaald))) });
+  const uitPerJaar = kolommen(jl, uitReeksen((fn) => perJaar.map(({ l }) => som(l, fn))), { fmt: eur0, asFmt: eurK, tipExtra, hrefs: jaren.map((j) => `#/jaar/${j}`), gedimd, topLabel: perJaar.map(({ l }) => eurK((som(l, uitbetaald) ?? 0) + (som(l, chequeVoordeel) ?? 0))) });
 
   // Netto loon per maand, alle maanden van de eerste tot de laatste fiche
   const eerste = fiches.reduce((a, f) => (f.maand < a ? f.maand : a), '9999');
@@ -235,15 +238,14 @@ function jarenScherm() {
       laatsteIndex ? { label: 'Index', waarde: f2(laatsteIndex.gegevens.index), detail: eersteIndex && eersteIndex !== laatsteIndex ? `was ${f2(eersteIndex.gegevens.index)} in ${eersteIndex.maand.slice(0, 4)}` : '' } : null,
     ])}
     ${raster(
-      kaart('Uitbetaald per jaar', uitPerJaar, { breed: true, sub: 'klik op een jaar' }),
+      kaart('Uitbetaald en cheques per jaar', uitPerJaar, { breed: true, sub: 'klik op een jaar' }),
       kaart('Netto loon per maand', nettoLijn + '<p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt voor die fiche.</p>', { breed: true }),
       kaart('Van bruto naar netto', pct, { breed: true }),
       kaart('Gewerkte dagen', enkelL(somDagen, (v) => f0(v))),
       kaart(fiches.some((f) => f.ecocheques) ? 'Maaltijd- en ecocheques' : 'Maaltijdcheques', kolommen(jl, [
-        { naam: 'Netto voordeel', kleur: KLEUR.netto, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).voordeel || null)) },
-        { naam: 'Eigen bijdrage', kleur: KLEUR.inh, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).eigen || null)) },
-        { naam: 'Ecocheques', kleur: KLEUR.regul, waarden: perJaar.map(({ l }) => som(l, (f) => f.ecocheques || null)) },
-      ].filter((r) => r.naam !== 'Ecocheques' || r.waarden.some((v) => v)), { fmt: eur0, asFmt: eurK, hoogte: 120, gedimd, tipExtra: perJaar.map(({ l }, i) => `${f0(som(l, cheques) ?? 0)} cheques · ${tipExtra[i]}`), topLabel: perJaar.map(({ l }) => { const v = som(l, (f) => (chequeGeld(f).voordeel || 0) + (f.ecocheques || 0) || null); return v == null ? null : eurK(v); }) }), { sub: 'boven: wat het netto opbrengt' }),
+        { naam: 'Netto voordeel (incl. ecocheques)', kleur: KLEUR.cheques, waarden: perJaar.map(({ l }) => som(l, (f) => chequeVoordeel(f) || null)) },
+        { naam: 'Eigen bijdrage', kleur: KLEUR.eigen, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).eigen || null)) },
+      ], { fmt: eur0, asFmt: eurK, hoogte: 120, gedimd, tipExtra: perJaar.map(({ l }, i) => `${f0(som(l, cheques) ?? 0)} cheques · ${tipExtra[i]}`), topLabel: perJaar.map(({ l }) => { const v = som(l, (f) => (chequeGeld(f).voordeel || 0) + (f.ecocheques || 0) || null); return v == null ? null : eurK(v); }) }), { sub: 'boven: wat het netto opbrengt' }),
       kaart('Fietsvergoeding', enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)),
       kaart('Index', indexLijn),
       kaart('Overzicht', `<div class="scroll"><table class="tabel">
@@ -280,7 +282,7 @@ function ficheScherm(id) {
     ${tegels([
       { label: 'Uitbetaald', waarde: eur(uitbetaald(f)), kleur: KLEUR.netto, hoofd: true, detail: regul(f) ? `incl. ${eur(regul(f))} regularisatie` : '' },
       { label: 'Bruto', waarde: eur0(brutoTot(f)) },
-      { label: 'Ingehouden', waarde: eur0(ingehouden(f)), kleur: KLEUR.rsz },
+      { label: 'Ingehouden', waarde: eur0(ingehouden(f)) },
       { label: 'Gewerkt', waarde: `${getal(gewerkteDagen(f))}<small>dagen</small>`, detail: `${getal(cheques(f))} maaltijdcheques` },
     ])}
     ${f.controles?.length ? kaart('Totalen kloppen niet', `<p class="let-op-tekst">${f.controles.map(esc).join('; ')}. Vergelijk met de PDF.</p>`, { extra: 'let-op' }) : ''}
