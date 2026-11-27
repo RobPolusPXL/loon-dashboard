@@ -44,8 +44,14 @@ function cheques(f) {
 // Waarde van een cheque: van de fiche zelf, anders de dichtstbijzijnde fiche waarop ze staat,
 // anders € 8 (de waarde op alle fiches van 2017–2025 die gecontroleerd zijn). eigen: je bijdrage (4MCO) op de fiche.
 const CHEQUE_STANDAARD = 8;
+// Waarden die niet op de fiche staan maar wel gekend zijn (uit de opladingen in de Pluxee-app).
+// "vanaf" = maand van de fiche. Sinds 2026 staat de waarde niet meer op de fiche.
+// September 2026: 12 × € 8 opgeladen in oktober + 12 × € 2 bijgestort = € 10; oktober 2026: 18 × € 10.
+const CHEQUE_GEKEND = [{ vanaf: '2026-09', waarde: 10 }];
 function chequeWaarde(f) {
   if (f.chequeWaarde != null) return { waarde: f.chequeWaarde, aangenomen: false };
+  const gekend = CHEQUE_GEKEND.filter((g) => f.maand >= g.vanaf).pop();
+  if (gekend) return { waarde: gekend.waarde, aangenomen: false };
   const met = state.fiches.filter((x) => x.chequeWaarde != null);
   if (met.length) {
     const best = [...met].sort((a, b) => Math.abs(maandIndex(a.maand) - maandIndex(f.maand)) - Math.abs(maandIndex(b.maand) - maandIndex(f.maand)))[0];
@@ -169,7 +175,7 @@ function chequeKaart(lijst) {
       <tr><th>Eigen bijdrage (van je loon)</th><td>− ${eur(tot('eigen'))}</td></tr>
       <tr class="totaal"><th>Wat het je extra opbrengt</th><td>${eur(tot('voordeel'))}</td></tr>
     </table>
-    ${aangenomen ? `<p class="noot">* Op die fiche staat de waarde per cheque niet. Daar rekent de app met de waarde van de dichtstbijzijnde fiche waarop ze wel staat.</p>` : ''}`, { breed: true });
+    ${aangenomen ? `<p class="noot">* Op die fiche staat de waarde per cheque niet. Daar rekent de app met de waarde van de dichtstbijzijnde fiche waarop ze wel staat (€ 8 tot en met augustus 2026, € 10 vanaf september 2026 volgens je Pluxee-opladingen).</p>` : ''}`, { breed: true });
 }
 
 // ---------- Alle jaren ----------
