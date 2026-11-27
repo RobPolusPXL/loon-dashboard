@@ -158,13 +158,18 @@ function chequeKaart(lijst) {
   const aangenomen = g.some((x) => x.aangenomen);
   return kaart('Maaltijdcheques', `<div class="groot">${eur0(tot('voordeel'))}<small>extra opbrengst</small></div>
     ${verdeelbalk([{ naam: 'Netto voordeel', v: tot('voordeel'), kleur: KLEUR.netto }, { naam: 'Eigen bijdrage', v: tot('eigen'), kleur: KLEUR.inh }], { fmt: eur })}
+    <div class="scroll"><table class="tabel">
+      <thead><tr><th>Maand</th><th>Cheques</th><th>Per cheque</th><th>Op je kaart</th><th>Eigen bijdrage</th><th>Voordeel</th></tr></thead>
+      <tbody>${lijst.map((f) => ({ f, c: chequeGeld(f) })).filter((x) => x.c.n).map(({ f, c }) => `<tr data-href="#/fiche/${esc(f.id)}">
+        <th>${maandKort(f.maand)}</th><td>${c.n}</td><td>${eur(c.waarde / c.n)}${c.aangenomen ? '*' : ''}</td><td>${eur(c.waarde)}</td><td>− ${eur(c.eigen)}</td><td><b>${eur(c.voordeel)}</b></td></tr>`).join('')}</tbody>
+    </table></div>
     <table class="lijst">
       <tr><th>Aantal cheques</th><td>${f0(tot('n'))}</td></tr>
       <tr><th>Waarde op je kaart</th><td>${eur(tot('waarde'))}</td></tr>
       <tr><th>Eigen bijdrage (van je loon)</th><td>− ${eur(tot('eigen'))}</td></tr>
       <tr class="totaal"><th>Wat het je extra opbrengt</th><td>${eur(tot('voordeel'))}</td></tr>
     </table>
-    ${aangenomen ? `<p class="noot">Niet op elke fiche staat de waarde per cheque. Daar rekent de app met € ${f2(chequeWaarde(lijst.find((f) => chequeGeld(f).aangenomen)).waarde)}, de waarde op je andere fiches.</p>` : ''}`);
+    ${aangenomen ? `<p class="noot">* Op die fiche staat de waarde per cheque niet. Daar rekent de app met de waarde van de dichtstbijzijnde fiche waarop ze wel staat.</p>` : ''}`, { breed: true });
 }
 
 // ---------- Alle jaren ----------
