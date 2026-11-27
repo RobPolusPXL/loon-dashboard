@@ -166,10 +166,12 @@ export function parseLoonfiche(paginas) {
       }
 
       // Oudere fiches hebben geen aantal op pagina 1, alleen "Maaltijdcheque €8,00-1,34   3" op pagina 2.
-      const mc = segs[0].t.match(/^Maaltijdcheque\s*€?\s*[\d,]+\s*-\s*[\d,]+(?:\s+(\d+))?$/i);
+      // Ook de waarde en je eigen bijdrage per cheque ("€8,00-1,09"; in 2017 "MC bestelling 8,00 - 1,34").
+      const mc = segs[0].t.match(/^(?:Maaltijdcheque|MC bestelling)[^\d]*([\d,]+)\s*-\s*([\d,]+)(?:\s+(\d+))?$/i);
       if (mc && !herb) {
-        const n = mc[1] ?? segs[1]?.t.match(/^\d+$/)?.[0];
+        const n = mc[3] ?? segs[1]?.t.match(/^\d+$/)?.[0];
         if (n != null && fiche.maaltijdcheques == null) fiche.maaltijdcheques = +n;
+        if (fiche.chequeWaarde == null) { fiche.chequeWaarde = getal(mc[1]); fiche.chequeBijdrage = getal(mc[2]); }
         if (segs.length <= 2) continue;
       }
 

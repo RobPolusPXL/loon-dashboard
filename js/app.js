@@ -41,6 +41,29 @@ function cheques(f) {
   return state.werk?.find((w) => w.maand === f.maand)?.maaltijdcheques ?? null;
 }
 
+// Waarde van een cheque: van de fiche zelf, anders de dichtstbijzijnde fiche waarop ze staat,
+// anders € 8 (de waarde op alle fiches van 2017–2025 die gecontroleerd zijn). eigen: je bijdrage (4MCO) op de fiche.
+const CHEQUE_STANDAARD = 8;
+function chequeWaarde(f) {
+  if (f.chequeWaarde != null) return { waarde: f.chequeWaarde, aangenomen: false };
+  const met = state.fiches.filter((x) => x.chequeWaarde != null);
+  if (met.length) {
+    const best = [...met].sort((a, b) => Math.abs(maandIndex(a.maand) - maandIndex(f.maand)) - Math.abs(maandIndex(b.maand) - maandIndex(f.maand)))[0];
+    return { waarde: best.chequeWaarde, aangenomen: true };
+  }
+  return { waarde: CHEQUE_STANDAARD, aangenomen: true };
+}
+const maandIndex = (ym) => +ym.slice(0, 4) * 12 + +ym.slice(5, 7);
+function chequeGeld(f) {
+  const n = cheques(f);
+  if (!n) return { n: n ?? null, waarde: 0, eigen: 0, voordeel: 0, aangenomen: false };
+  const { waarde, aangenomen } = chequeWaarde(f);
+  const l = f.secties.flatMap((x) => x.lijnen).find((x) => x.code === '4MCO' || /Maaltijd/i.test(x.omschrijving));
+  const eigen = l && l.bedrag < 0 ? -l.bedrag : n * (f.chequeBijdrage ?? 1.09);
+  const bruto = Math.round(n * waarde * 100) / 100;
+  return { n, waarde: bruto, eigen: Math.round(eigen * 100) / 100, voordeel: Math.round((bruto - eigen) * 100) / 100, aangenomen };
+}
+
 // Som over een lijst fiches, elke maand maar één keer (twee fiches in één maand = één keer dagen)
 const somDagen = (lijst) => som([...new Map(lijst.map((f) => [f.maand, f])).values()], gewerkteDagen);
 const gewerkteUren = (f) => prestatie(f, 'uren', /^Gewerkte uren/i);
@@ -123,8 +146,25 @@ function jaarScherm() {
         <table class="lijst">${Object.entries(lijst.flatMap((f) => (f.secties.find((x) => x.sleutel === 'vergoedingen')?.lijnen || [])).reduce((a, l) => { a[l.omschrijving] = (a[l.omschrijving] ?? 0) + l.bedrag; return a; }, {}))
           .sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${eur0(v)}</td></tr>`).join('')}
           ${som(lijst, regul) ? `<tr><th>Regularisaties</th><td>${eur0(som(lijst, regul))}</td></tr>` : ''}</table>`),
+      chequeKaart(lijst),
       kaart('Per maand', tabel, { breed: true }),
     )}`;
+}
+
+function chequeKaart(lijst) {
+  const g = lijst.map(chequeGeld).filter((x) => x.n);
+  if (!g.length) return '';
+  const tot = (k) => g.reduce((a, x) => a + x[k], 0);
+  const aangenomen = g.some((x) => x.aangenomen);
+  return kaart('Maaltijdcheques', `<div class="groot">${eur0(tot('voordeel'))}<small>extra opbrengst</small></div>
+    ${verdeelbalk([{ naam: 'Netto voordeel', v: tot('voordeel'), kleur: KLEUR.netto }, { naam: 'Eigen bijdrage', v: tot('eigen'), kleur: KLEUR.inh }], { fmt: eur })}
+    <table class="lijst">
+      <tr><th>Aantal cheques</th><td>${f0(tot('n'))}</td></tr>
+      <tr><th>Waarde op je kaart</th><td>${eur(tot('waarde'))}</td></tr>
+      <tr><th>Eigen bijdrage (van je loon)</th><td>− ${eur(tot('eigen'))}</td></tr>
+      <tr class="totaal"><th>Wat het je extra opbrengt</th><td>${eur(tot('voordeel'))}</td></tr>
+    </table>
+    ${aangenomen ? `<p class="noot">Niet op elke fiche staat de waarde per cheque. Daar rekent de app met € ${f2(chequeWaarde(lijst.find((f) => chequeGeld(f).aangenomen)).waarde)}, de waarde op je andere fiches.</p>` : ''}`);
 }
 
 // ---------- Alle jaren ----------
@@ -183,7 +223,10 @@ function jarenScherm() {
       kaart('Netto loon per maand', nettoLijn + '<p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt voor die fiche.</p>', { breed: true }),
       kaart('Van bruto naar netto', pct, { breed: true }),
       kaart('Gewerkte dagen', enkelL(somDagen, (v) => f0(v))),
-      kaart('Maaltijdcheques', enkel(cheques, (v) => f0(v))),
+      kaart('Maaltijdcheques', kolommen(jl, [
+        { naam: 'Netto voordeel', kleur: KLEUR.netto, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).voordeel || null)) },
+        { naam: 'Eigen bijdrage', kleur: KLEUR.inh, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).eigen || null)) },
+      ], { fmt: eur0, asFmt: eurK, hoogte: 120, tipExtra: perJaar.map(({ l }) => `${f0(som(l, cheques) ?? 0)} cheques`), topLabel: perJaar.map(({ l }) => { const v = som(l, (f) => chequeGeld(f).voordeel || null); return v == null ? null : eurK(v); }) }), { sub: 'boven: wat het netto opbrengt' }),
       kaart('Fietsvergoeding', enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)),
       kaart('Index', indexLijn),
       kaart('Overzicht', `<div class="scroll"><table class="tabel">
@@ -308,11 +351,11 @@ async function laad() {
 
 function exporteer() {
   const kol = ['maand', 'bruto', 'rsz', 'belastbaar', 'voorheffing', 'inhoudingen', 'vergoedingen', 'netto', 'regularisatie', 'uitbetaald',
-    'gewerkte_dagen', 'gewerkte_uren', 'loopbaanonderbreking_dagen', 'maaltijdcheques', 'fietsvergoeding', 'index', 'jaarwedde'];
+    'gewerkte_dagen', 'gewerkte_uren', 'loopbaanonderbreking_dagen', 'maaltijdcheques', 'cheques_waarde', 'cheques_eigen_bijdrage', 'cheques_voordeel', 'fietsvergoeding', 'index', 'jaarwedde'];
   const n = (v) => (v == null ? '' : String(v).replace('.', ','));
   const rijen = [...state.fiches].sort((a, b) => a.maand.localeCompare(b.maand)).map((f) => [f.maand, f.totalen.bruto, f.totalen.sociale,
     f.totalen.belastbaar, f.totalen.voorheffing, f.totalen.inhoudingen, f.totalen.vergoedingen, f.totalen.netto, f.totalen.regularisatie,
-    uitbetaald(f), gewerkteDagen(f), gewerkteUren(f), loopbaanDagen(f), cheques(f), lijn(f, /Fietsvergoeding/i),
+    uitbetaald(f), gewerkteDagen(f), gewerkteUren(f), loopbaanDagen(f), cheques(f), chequeGeld(f).waarde, chequeGeld(f).eigen, chequeGeld(f).voordeel, lijn(f, /Fietsvergoeding/i),
     f.gegevens?.index, f.gegevens?.jaarwedde].map(n).join(';'));
   const blob = new Blob(['﻿' + [kol.join(';'), ...rijen].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'loonfiches.csv' });
