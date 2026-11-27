@@ -4,7 +4,7 @@
 export const KLEUR = {
   // Loon en Jaren: elke betekenis een eigen kleur
   netto: '#338ced', rsz: '#e76624', bv: '#9887ef', inh: '#7A828F', // bruto → netto: blauw, oranje, paars, grijs
-  verg: '#00a888', andere: '#eb6263', regul: '#d28e05', cheques: '#e24d8b', // fietsvergoeding turquoise, andere vergoedingen rood, regularisatie geel, cheques roze
+  verg: '#00a888', andere: '#d28e05', regul: '#9dc8f7', cheques: '#e24d8b', // fietsvergoeding turquoise, andere vergoedingen geel (enkel 2020), regularisatie lichtblauw (= later betaald loon), cheques roze
   eigen: '#7A828F', // eigen bijdrage maaltijdcheques = een van je inhoudingen, dus hetzelfde grijs
   // Gevalideerd: geen gelijkende kleuren naast elkaar (oranje/geel, groen/turquoise, rood/roze nooit aangrenzend)
   enkel: '#338ced', // één reeks
