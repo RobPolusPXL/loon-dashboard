@@ -2,11 +2,15 @@
 // Kleuren: gevalideerd voor kleurenblindheid op de donkere achtergrond (dataviz-validator).
 
 export const KLEUR = {
-  // Loon en Jaren: elke betekenis een eigen kleur
-  netto: '#338ced', rsz: '#e76624', bv: '#9887ef', inh: '#7A828F', // bruto → netto: blauw, oranje, paars, grijs
-  verg: '#00a888', andere: '#d28e05', regul: '#9dc8f7', cheques: '#e24d8b', // fietsvergoeding turquoise, andere vergoedingen geel (enkel 2020), regularisatie lichtblauw (= later betaald loon), cheques roze
-  eigen: '#7A828F', // eigen bijdrage maaltijdcheques = een van je inhoudingen, dus hetzelfde grijs
-  // Gevalideerd: geen gelijkende kleuren naast elkaar (oranje/geel, groen/turquoise, rood/roze nooit aangrenzend)
+  // Loon en Jaren: 8 kleuren die onderling duidelijk verschillen (elk paar nagerekend, OKLab ΔE ≥ 15)
+  netto: '#338ced', // blauw
+  regul: '#f2d14c', // geel
+  verg: '#22d3ee', // cyaan: fietsvergoeding
+  cheques: '#ec4899', // roze: maaltijd- en ecocheques
+  rsz: '#e76624', // oranje
+  bv: '#a855f7', // paars: bedrijfsvoorheffing
+  inh: '#7A828F', eigen: '#7A828F', // grijs: inhoudingen en eigen bijdrage maaltijdcheques (die er deel van is)
+  andere: '#84cc16', // limoen: andere vergoedingen (enkel 2020)
   enkel: '#338ced', // één reeks
   // Werk: gewerkt neutraal, meerprestaties groen (oranje is "overig" bij de afwezigheden)
   werk: '#7A828F', meer: '#0aac23',
