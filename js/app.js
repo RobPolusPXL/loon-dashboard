@@ -26,6 +26,21 @@ const werkDagen = (ym) => {
   return w ? w.dagen.filter((d) => typeof d.gepresteerd === 'number' && d.gepresteerd > 0).length : null;
 };
 const gewerkteDagen = (f) => werkDagen(f.maand) ?? prestatie(f, 'dagen', /^Gewerkte dagen/i);
+// Maaltijdcheques: het aantal van de fiche; ontbreekt dat (oudere fiches die vóór een aanpassing ingelezen zijn),
+// dan uitgerekend uit je eigen bijdrage (4MCO: € 1,09 of vroeger € 1,34 per cheque), anders uit de time statement.
+const BIJDRAGE_PER_CHEQUE = [1.09, 1.34, 1.00];
+function cheques(f) {
+  if (f.maaltijdcheques != null) return f.maaltijdcheques;
+  const l = f.secties.flatMap((x) => x.lijnen).find((x) => x.code === '4MCO' || /Maaltijd/i.test(x.omschrijving));
+  if (l && l.bedrag < 0) {
+    for (const r of BIJDRAGE_PER_CHEQUE) {
+      const n = -l.bedrag / r;
+      if (n >= 1 && Math.abs(n - Math.round(n)) < 0.02) return Math.round(n);
+    }
+  }
+  return state.werk?.find((w) => w.maand === f.maand)?.maaltijdcheques ?? null;
+}
+
 // Som over een lijst fiches, elke maand maar één keer (twee fiches in één maand = één keer dagen)
 const somDagen = (lijst) => som([...new Map(lijst.map((f) => [f.maand, f])).values()], gewerkteDagen);
 const gewerkteUren = (f) => prestatie(f, 'uren', /^Gewerkte uren/i);
@@ -99,7 +114,7 @@ function jaarScherm() {
       { label: 'Uitbetaald', waarde: eur0(uit), detail: `gemiddeld ${eur0(uit / nMaanden)} per maand`, kleur: KLEUR.netto, hoofd: true },
       { label: 'Bruto', waarde: eur0(som(lijst, brutoTot)), detail: nettoPct != null ? `${nettoPct}% blijft netto over` : '' },
       { label: 'Ingehouden', waarde: eur0(som(lijst, ingehouden)), detail: 'RSZ, voorheffing en inhoudingen', kleur: KLEUR.rsz },
-      { label: 'Gewerkt', waarde: `${getal(somDagen(lijst))}<small>dagen</small>`, detail: `${getal(som(lijst, (f) => f.maaltijdcheques))} maaltijdcheques`, href: '#/werk' },
+      { label: 'Gewerkt', waarde: `${getal(somDagen(lijst))}<small>dagen</small>`, detail: `${getal(som(lijst, cheques))} maaltijdcheques`, href: '#/werk' },
     ])}
     ${raster(
       kaart('Uitbetaald per maand', grafiek + (ontbreekt.length ? `<p class="noot">Geen fiche voor ${ontbreekt.join(', ')} ${jaar}.</p>` : ''), { breed: true, sub: 'klik op een maand voor de fiche' }),
@@ -168,7 +183,7 @@ function jarenScherm() {
       kaart('Netto loon per maand', nettoLijn + '<p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt voor die fiche.</p>', { breed: true }),
       kaart('Van bruto naar netto', pct, { breed: true }),
       kaart('Gewerkte dagen', enkelL(somDagen, (v) => f0(v))),
-      kaart('Maaltijdcheques', enkel((f) => f.maaltijdcheques, (v) => f0(v))),
+      kaart('Maaltijdcheques', enkel(cheques, (v) => f0(v))),
       kaart('Fietsvergoeding', enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)),
       kaart('Index', indexLijn),
       kaart('Overzicht', `<div class="scroll"><table class="tabel">
@@ -206,7 +221,7 @@ function ficheScherm(id) {
       { label: 'Uitbetaald', waarde: eur(uitbetaald(f)), kleur: KLEUR.netto, hoofd: true, detail: regul(f) ? `incl. ${eur(regul(f))} regularisatie` : '' },
       { label: 'Bruto', waarde: eur0(brutoTot(f)) },
       { label: 'Ingehouden', waarde: eur0(ingehouden(f)), kleur: KLEUR.rsz },
-      { label: 'Gewerkt', waarde: `${getal(gewerkteDagen(f))}<small>dagen</small>`, detail: `${getal(f.maaltijdcheques)} maaltijdcheques` },
+      { label: 'Gewerkt', waarde: `${getal(gewerkteDagen(f))}<small>dagen</small>`, detail: `${getal(cheques(f))} maaltijdcheques` },
     ])}
     ${f.controles?.length ? kaart('Totalen kloppen niet', `<p class="let-op-tekst">${f.controles.map(esc).join('; ')}. Vergelijk met de PDF.</p>`, { extra: 'let-op' }) : ''}
     ${raster(
@@ -297,7 +312,7 @@ function exporteer() {
   const n = (v) => (v == null ? '' : String(v).replace('.', ','));
   const rijen = [...state.fiches].sort((a, b) => a.maand.localeCompare(b.maand)).map((f) => [f.maand, f.totalen.bruto, f.totalen.sociale,
     f.totalen.belastbaar, f.totalen.voorheffing, f.totalen.inhoudingen, f.totalen.vergoedingen, f.totalen.netto, f.totalen.regularisatie,
-    uitbetaald(f), gewerkteDagen(f), gewerkteUren(f), loopbaanDagen(f), f.maaltijdcheques, lijn(f, /Fietsvergoeding/i),
+    uitbetaald(f), gewerkteDagen(f), gewerkteUren(f), loopbaanDagen(f), cheques(f), lijn(f, /Fietsvergoeding/i),
     f.gegevens?.index, f.gegevens?.jaarwedde].map(n).join(';'));
   const blob = new Blob(['﻿' + [kol.join(';'), ...rijen].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'loonfiches.csv' });
