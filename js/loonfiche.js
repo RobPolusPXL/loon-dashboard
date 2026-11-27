@@ -101,8 +101,11 @@ export function parseLoonfiche(paginas) {
       ?? items.find((i) => /^Rubriek$/i.test(i.str.trim()) && i.x > 150); // oudere weddefiche
     const grens = kop ? kop.x - 5 : null;
     const blokken = grens == null ? [items] : [items.filter((i) => i.x < grens), items.filter((i) => i.x >= grens)];
+    let vorige = '';
     for (const segs of blokken.flatMap(regels)) {
       const alles = segs.map((s) => s.t).join(' ');
+      const vorigeRegel = vorige; // "Bedrag van eco-cheques opgeladen op de" staat op de regel vóór "Pluxee kaart : 200,00 €"
+      vorige = alles;
 
       const titel = alles.match(/^(?:Loonfiche|Weddefiche) van (.+)$/i);
       if (titel) { fiche.maand ||= maandVan(titel[1]); continue; }
@@ -142,8 +145,15 @@ export function parseLoonfiche(paginas) {
         const label = kv[1].trim();
         const waarde = kv[2].replace(/€|u\/week/g, '').trim();
         if (/maaltijdcheques|kaart$/i.test(label)) {
-          const n = (waarde || segs[segs.indexOf(s) + 1]?.t || '').match(/^\d+$/);
-          if (n) fiche.maaltijdcheques = +n[0];
+          const tekst = waarde || segs[segs.indexOf(s) + 1]?.t || '';
+          if (/eco/i.test(vorigeRegel) || /eco/i.test(label)) {
+            const b = tekst.replace(/[^\d.,]/g, '');
+            if (/^\d{1,3}(?:\.\d{3})*,\d{2}$/.test(b)) fiche.ecocheques = getal(b);
+            kvGevonden = true;
+            continue;
+          }
+          const n = tekst.match(/^\d+$/);
+          if (n && fiche.maaltijdcheques == null) fiche.maaltijdcheques = +n[0];
           kvGevonden = true;
           continue;
         }

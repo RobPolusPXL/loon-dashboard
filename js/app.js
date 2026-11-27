@@ -159,10 +159,11 @@ function jaarScherm() {
 
 function chequeKaart(lijst) {
   const g = lijst.map(chequeGeld).filter((x) => x.n);
-  if (!g.length) return '';
+  const eco = lijst.filter((f) => f.ecocheques);
+  if (!g.length && !eco.length) return '';
   const tot = (k) => g.reduce((a, x) => a + x[k], 0);
   const aangenomen = g.some((x) => x.aangenomen);
-  return kaart('Maaltijdcheques', `<div class="groot">${eur0(tot('voordeel'))}<small>extra opbrengst</small></div>
+  return kaart(eco.length ? 'Maaltijd- en ecocheques' : 'Maaltijdcheques', `<div class="groot">${eur0(tot('voordeel') + eco.reduce((a, f) => a + f.ecocheques, 0))}<small>extra opbrengst${eco.length ? ', ecocheques inbegrepen' : ''}</small></div>
     ${verdeelbalk([{ naam: 'Netto voordeel', v: tot('voordeel'), kleur: KLEUR.netto }, { naam: 'Eigen bijdrage', v: tot('eigen'), kleur: KLEUR.inh }], { fmt: eur })}
     <div class="scroll"><table class="tabel">
       <thead><tr><th>Maand</th><th>Cheques</th><th>Per cheque</th><th>Op je kaart</th><th>Eigen bijdrage</th><th>Voordeel</th></tr></thead>
@@ -173,8 +174,10 @@ function chequeKaart(lijst) {
       <tr><th>Aantal cheques</th><td>${f0(tot('n'))}</td></tr>
       <tr><th>Waarde op je kaart</th><td>${eur(tot('waarde'))}</td></tr>
       <tr><th>Eigen bijdrage (van je loon)</th><td>− ${eur(tot('eigen'))}</td></tr>
-      <tr class="totaal"><th>Wat het je extra opbrengt</th><td>${eur(tot('voordeel'))}</td></tr>
+      <tr class="totaal"><th>Wat de maaltijdcheques extra opbrengen</th><td>${eur(tot('voordeel'))}</td></tr>
     </table>
+    ${eco.length ? `<h2>Ecocheques</h2><table class="lijst">${eco.map((f) => `<tr><th>Opgeladen met je fiche van ${maandVol(f.maand)}</th><td><b>${eur(f.ecocheques)}</b></td></tr>`).join('')}</table>
+      <p class="noot">Ecocheques kosten je niets: het volledige bedrag is extra.</p>` : ''}
     ${aangenomen ? `<p class="noot">* Op die fiche staat de waarde per cheque niet. Daar rekent de app met de waarde van de dichtstbijzijnde fiche waarop ze wel staat (€ 8 tot en met augustus 2026, € 10 vanaf september 2026 volgens je Pluxee-opladingen).</p>` : ''}`, { breed: true });
 }
 
@@ -234,10 +237,11 @@ function jarenScherm() {
       kaart('Netto loon per maand', nettoLijn + '<p class="noot">Zonder vergoedingen en regularisaties. Klik op een punt voor die fiche.</p>', { breed: true }),
       kaart('Van bruto naar netto', pct, { breed: true }),
       kaart('Gewerkte dagen', enkelL(somDagen, (v) => f0(v))),
-      kaart('Maaltijdcheques', kolommen(jl, [
+      kaart(fiches.some((f) => f.ecocheques) ? 'Maaltijd- en ecocheques' : 'Maaltijdcheques', kolommen(jl, [
         { naam: 'Netto voordeel', kleur: KLEUR.netto, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).voordeel || null)) },
         { naam: 'Eigen bijdrage', kleur: KLEUR.inh, waarden: perJaar.map(({ l }) => som(l, (f) => chequeGeld(f).eigen || null)) },
-      ], { fmt: eur0, asFmt: eurK, hoogte: 120, tipExtra: perJaar.map(({ l }) => `${f0(som(l, cheques) ?? 0)} cheques`), topLabel: perJaar.map(({ l }) => { const v = som(l, (f) => chequeGeld(f).voordeel || null); return v == null ? null : eurK(v); }) }), { sub: 'boven: wat het netto opbrengt' }),
+        { naam: 'Ecocheques', kleur: KLEUR.regul, waarden: perJaar.map(({ l }) => som(l, (f) => f.ecocheques || null)) },
+      ].filter((r) => r.naam !== 'Ecocheques' || r.waarden.some((v) => v)), { fmt: eur0, asFmt: eurK, hoogte: 120, tipExtra: perJaar.map(({ l }) => `${f0(som(l, cheques) ?? 0)} cheques`), topLabel: perJaar.map(({ l }) => { const v = som(l, (f) => (chequeGeld(f).voordeel || 0) + (f.ecocheques || 0) || null); return v == null ? null : eurK(v); }) }), { sub: 'boven: wat het netto opbrengt' }),
       kaart('Fietsvergoeding', enkel((f) => lijn(f, /Fietsvergoeding/i), eurK, eur0)),
       kaart('Index', indexLijn),
       kaart('Overzicht', `<div class="scroll"><table class="tabel">
@@ -362,11 +366,11 @@ async function laad() {
 
 function exporteer() {
   const kol = ['maand', 'bruto', 'rsz', 'belastbaar', 'voorheffing', 'inhoudingen', 'vergoedingen', 'netto', 'regularisatie', 'uitbetaald',
-    'gewerkte_dagen', 'gewerkte_uren', 'loopbaanonderbreking_dagen', 'maaltijdcheques', 'cheques_waarde', 'cheques_eigen_bijdrage', 'cheques_voordeel', 'fietsvergoeding', 'index', 'jaarwedde'];
+    'gewerkte_dagen', 'gewerkte_uren', 'loopbaanonderbreking_dagen', 'maaltijdcheques', 'cheques_waarde', 'cheques_eigen_bijdrage', 'cheques_voordeel', 'ecocheques', 'fietsvergoeding', 'index', 'jaarwedde'];
   const n = (v) => (v == null ? '' : String(v).replace('.', ','));
   const rijen = [...state.fiches].sort((a, b) => a.maand.localeCompare(b.maand)).map((f) => [f.maand, f.totalen.bruto, f.totalen.sociale,
     f.totalen.belastbaar, f.totalen.voorheffing, f.totalen.inhoudingen, f.totalen.vergoedingen, f.totalen.netto, f.totalen.regularisatie,
-    uitbetaald(f), gewerkteDagen(f), gewerkteUren(f), loopbaanDagen(f), cheques(f), chequeGeld(f).waarde, chequeGeld(f).eigen, chequeGeld(f).voordeel, lijn(f, /Fietsvergoeding/i),
+    uitbetaald(f), gewerkteDagen(f), gewerkteUren(f), loopbaanDagen(f), cheques(f), chequeGeld(f).waarde, chequeGeld(f).eigen, chequeGeld(f).voordeel, f.ecocheques, lijn(f, /Fietsvergoeding/i),
     f.gegevens?.index, f.gegevens?.jaarwedde].map(n).join(';'));
   const blob = new Blob(['﻿' + [kol.join(';'), ...rijen].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'loonfiches.csv' });
